@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#6a432b">
+  <title>A Little · Quản lý nhập nguyên liệu</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css?v=portal-1">
+</head>
+<body>
+<div class="public-shell">
+  <div class="utility-bar"><span>QUY TRÌNH TO-BE · A LITTLE ĐÀ NẴNG</span><span>DỮ LIỆU MÔ PHỎNG, PHỤC VỤ HỌC TẬP</span></div>
+  <header class="site-header">
+    <div class="site-mark">a<span>·</span></div>
+    <div class="site-heading"><div>A LITTLE · COFFEE &amp; MEMORIES</div><h1>QUẢN LÝ QUY TRÌNH NHẬP NGUYÊN LIỆU</h1><p>HỆ THỐNG VẬN HÀNH NỘI BỘ · ĐÀ NẴNG</p></div>
+    <div class="site-status"><i></i> HỆ THỐNG SẴN SÀNG</div>
+  </header>
+  <nav class="public-nav"><a class="selected" href="#login">ĐĂNG NHẬP</a><span>QUY TRÌNH NHẬP KHO</span><span class="nav-spacer"></span><span class="public-note">THEO DÕI · DUYỆT · NHẬN HÀNG</span></nav>
+  <main id="login" class="login-screen">
+    <section class="login-card"><div class="panel-overline">CỔNG THÀNH VIÊN</div><h2>Đăng nhập hệ thống</h2><p class="login-intro">Sử dụng tài khoản được cấp để xử lý công việc theo đúng vai trò.</p>
+      <form id="login-form"><label>Tên đăng nhập<input name="username" autocomplete="username" placeholder="Nhập tên đăng nhập" required></label><label>Mật khẩu<input name="password" type="password" autocomplete="current-password" placeholder="Nhập mật khẩu" required></label><button class="primary login-submit" type="submit">Đăng nhập <span>→</span></button><div id="login-error" class="error-text"></div></form>
+      <div class="login-foot"><span>🔒 Phiên đăng nhập được bảo vệ</span><details class="demo-help"><summary>Tài khoản demo</summary><p>Mật khẩu chung: <b>Demo123!</b></p><p>Nhân viên: <b>linh</b></p><p>Chủ quán: <b>trang</b></p><p>Phụ trách kho: <b>kho</b></p></details></div>
+    </section>
+    <section class="demo-panel" id="demo-access"><div class="demo-photo" role="img" aria-label="Không gian cà phê A Little bên sông Hàn, Đà Nẵng"></div><div class="demo-content"><div class="demo-title-row"><div><div class="panel-overline">TRUY CẬP NHANH</div><h2>Tài khoản dùng thử</h2></div><span class="pill">3 VAI TRÒ</span></div><p class="demo-description">Chọn một vai trò để đăng nhập và xem các màn hình theo quy trình.</p><div class="demo-roles"><button class="demo-role" type="button" data-demo-user="linh"><span class="role-icon employee-icon">♧</span><span><b>Nhân viên</b><small>Gửi đơn chờ chủ quán duyệt</small></span><span class="role-arrow">→</span></button><button class="demo-role" type="button" data-demo-user="trang"><span class="role-icon owner-icon">⌂</span><span><b>Chủ quán</b><small>Tạo đơn, duyệt và thanh toán</small></span><span class="role-arrow">→</span></button><button class="demo-role" type="button" data-demo-user="kho"><span class="role-icon warehouse-icon">▦</span><span><b>Phụ trách kho</b><small>Điều chỉnh tồn và nhận hàng</small></span><span class="role-arrow">→</span></button></div><div class="demo-password">Mật khẩu demo cho cả ba vai trò: <b>Demo123!</b></div></div></section>
+  </main>
+  <footer class="public-footer"><span>A LITTLE ĐÀ NẴNG · HỆ THỐNG HỌC TẬP</span><span>QUY TRÌNH NHẬP NGUYÊN LIỆU · TO-BE</span></footer>
+</div>
+<div id="app" class="app-shell hidden"><aside class="sidebar"><a class="brand" href="#dashboard"><span class="brand-mark small">a<span>·</span></span><span>A LITTLE<small>INVENTORY STUDIO</small></span></a><div class="side-label">TỔNG QUAN</div><button class="nav-item active" data-page="dashboard"><span class="nav-icon">🏠</span> Tổng quan</button><button class="nav-item" data-page="inventory"><span class="nav-icon">🥛</span> Nguyên liệu <span class="nav-count" id="low-badge">0</span></button><button class="nav-item" data-page="orders"><span class="nav-icon">🧾</span> Đơn nhập</button><button class="nav-item" data-page="activity"><span class="nav-icon">📦</span> Nhập &amp; trả hàng</button><button class="nav-item" data-page="ai-diary"><span class="nav-icon">✨</span> Nhật ký AI</button><div class="side-spacer"></div><div class="side-note"><div class="note-icon">✳</div><b>Nhập hàng gọn hơn</b><p>Theo dõi tồn kho và xử lý đơn nhập tại một nơi.</p></div><div class="user-box"><div class="avatar" id="avatar">T</div><div class="user-meta"><b id="user-name">Trang</b><small id="user-role">Chủ quán</small></div><button id="theme-toggle" class="icon-button" title="Chuyển giao diện sáng/tối" aria-label="Chuyển giao diện sáng/tối">◐</button><button id="logout" class="icon-button" title="Đăng xuất" aria-label="Đăng xuất">↗</button></div></aside><main class="main"><header class="topbar"><div><div class="breadcrumb">A LITTLE <span>/</span> <b id="crumb">TỔNG QUAN</b></div><h1 id="page-title">Chào buổi sáng, Trang <span class="wave">✳</span></h1></div><div class="top-actions"><span class="live-dot"></span><span class="online-label">Hệ thống đang hoạt động</span><button class="date-pill" id="today"></button></div></header><div id="toast" class="toast"></div><section id="page-dashboard" class="page"></section><section id="page-inventory" class="page hidden"></section><section id="page-orders" class="page hidden"></section><section id="page-activity" class="page hidden"></section><section id="page-ai-diary" class="page hidden"></section></main></div>
+<script src="/app.js" type="module"></script>
+</body></html>
