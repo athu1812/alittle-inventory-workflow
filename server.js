@@ -31,7 +31,7 @@ const seed = () => ({
     {id:'AI-0010',author:'AI · yêu cầu chạy ứng dụng',prompt:'Khởi động web và xác minh trang chủ, health check và mục nhật ký AI trên localhost.',result:'Ứng dụng trả HTTP 200 ở localhost:3001; /api/health trả ok và API nhật ký có dữ liệu.',evaluation:'Xác minh chạy được trong môi trường này, chưa phải bản deploy công khai. Email SMTP chưa cấu hình.',adjustment:'Ghi lệnh chạy, tài khoản demo và hạn chế deploy/SMTP vào README để nhóm tự chạy và cấu hình.',outcome:'success',failurePattern:'',at:new Date().toISOString()},
     {id:'AI-0011',author:'Nhóm',prompt:'Chủ quán không cần gửi đơn duyệt, chỉ có nhân viên mới cần gửi đơn duyệt, chủ quán tạo đơn là đi thẳng tới NCC luôn. Làm đẹp web và thu gọn nhật ký còn đơn nhập/đơn trả lại, hiện số lượng và mã đơn.',result:'Điều chỉnh backend để đơn nhân viên chờ duyệt, đơn chủ quán chuyển trực tiếp sang trạng thái gửi NCC; thêm ghi nhận phần nhận/nhập/trả và lọc nhật ký theo hai sự kiện. Làm mới giao diện với icon và tông màu cà phê.',evaluation:'Mã frontend và backend đã được cập nhật; chưa chạy lại bộ kiểm thử trong lượt chỉnh sửa này. SMTP chưa cấu hình nên gửi email NCC thật chưa xác minh.',adjustment:'Cập nhật hướng dẫn, kiểm tra mã cú pháp, khởi động lại web và nhờ nhóm cấu hình SMTP/review luồng thực tế.',outcome:'success',failurePattern:'',at:new Date().toISOString()},
     {id:'AI-0012',author:'Nhóm',prompt:'M có thể chỉnh lại web theo dạng như trang hethongcapbangdiem-due.vercel.app không, giữ nghiệp vụ nhưng build deploy công khai?',result:'Tổ chức lại trang đăng nhập thành cổng nghiệp vụ với header, điều hướng, form đăng nhập, thẻ truy cập nhanh cho ba vai trò; giữ nhận diện A Little màu nâu ấm. Xác định Vercel cần repo Git và PostgreSQL bền vững thay cho JSON cục bộ.',evaluation:'Giao diện local đã mở được. URL công khai chưa thể tạo khi repo chưa có source commit và database chưa kết nối.',adjustment:'Chuẩn bị adapter PostgreSQL cho serverless và cấu hình Vercel; xin người dùng tạo Supabase project để thêm bí mật qua dashboard.',outcome:'success',failurePattern:'',at:new Date().toISOString()},
-    {id:'AI-0013',author:'Nhóm',prompt:'Kết nối repository athu1812/alittle-inventory-workflow với Vercel và Supabase để đưa ứng dụng lên địa chỉ công khai.',result:'Khởi tạo repository local, đặt origin GitHub; thêm backend PostgreSQL dùng transaction row lock, session lưu bền vững, API function cho Vercel và cấu hình deploy. Thêm hướng dẫn DATABASE_URL và SESSION_SECRET.',evaluation:'Cú pháp các entry point đã kiểm tra được; cần kết nối database thật và deploy. Chưa chạy bộ test trong lượt này.',adjustment:'Người dùng tạo Supabase project và lưu Transaction pooler URL; tiếp theo nhập URL cùng SESSION_SECRET vào Vercel, rồi push/deploy sau khi repo được xác thực.',outcome:'success',failurePattern:'',at:new Date().toISOString()}
+    {id:'AI-0013',author:'Nhóm',prompt:'Kết nối repository athu1812/alittle-inventory-workflow với Vercel và Supabase để đưa ứng dụng lên địa chỉ công khai.',result:'Khởi tạo repository local, đặt origin GitHub; thêm backend PostgreSQL dùng transaction row lock và session lưu bền vững; export app Express theo preset Vercel. Thêm hướng dẫn DATABASE_URL và SESSION_SECRET.',evaluation:'Cú pháp entry point đã kiểm tra được; cần kết nối database thật và deploy. Chưa chạy bộ test trong lượt này.',adjustment:'Người dùng tạo Supabase project và lưu Transaction pooler URL; tiếp theo nhập URL cùng SESSION_SECRET vào Vercel, rồi deploy từ branch main.',outcome:'success',failurePattern:'',at:new Date().toISOString()}
   ], sessions: {},
   inventory: [
     { id: 'm_espresso', name: 'Hạt cà phê Espresso', unit: 'kg', current: 8, minimum: 12, supplier: 'Công ty Cà phê Tây Nguyên', price: 185000 },
@@ -51,6 +51,12 @@ export function createApplication({ storePath = process.env.STORE_PATH || path.j
   const databaseUrl = process.env.DATABASE_URL;
   const pool = databaseUrl ? new pg.Pool({ connectionString: databaseUrl, max: 1, ssl: { rejectUnauthorized: false } }) : null;
   const requestContext = new AsyncLocalStorage();
+  app.use((req, res, next) => {
+    if (process.env.VERCEL === '1' && req.path.startsWith('/api/') && (!databaseUrl || !process.env.SESSION_SECRET || sessionSecret === 'local-development-secret-change-before-deploy')) {
+      return res.status(503).json({ error: 'Thiếu DATABASE_URL hoặc SESSION_SECRET trong Environment Variables của Vercel.' });
+    }
+    next();
+  });
   const persist = () => {
     const client = requestContext.getStore()?.client;
     if (client) return client.query('UPDATE alittle_app_state SET payload = $1::jsonb, updated_at = now() WHERE id = 1', [JSON.stringify(state)]);
@@ -138,11 +144,13 @@ export function createApplication({ storePath = process.env.STORE_PATH || path.j
   app.use((err,_req,res,_next)=>{console.error(err);res.status(500).json({error:'Lỗi hệ thống. Thử lại sau.'});});
   app.locals.init=init; app.locals.state=()=>state; return app;
 }
+const app = createApplication();
+export default app;
 function parseCookies(header=''){return Object.fromEntries(header.split(';').map(c=>c.trim().split('=').map(decodeURIComponent)).filter(p=>p.length===2));}
 function publicUser(u){return{id:u.id,username:u.username,name:u.name,role:u.role,roleLabel:ROLES[u.role]};}
 function smtpReady(){return Boolean(process.env.SMTP_HOST&&process.env.SMTP_USER&&process.env.SMTP_PASS&&process.env.ALERT_EMAIL_TO);}
 function makeSmtpTransport(){return smtpReady()?nodemailer.createTransport({host:process.env.SMTP_HOST,port:Number(process.env.SMTP_PORT||587),secure:String(process.env.SMTP_SECURE)==='true',auth:{user:process.env.SMTP_USER,pass:process.env.SMTP_PASS}}):null;}
 
 if (process.argv[1] && path.resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
-  const app=createApplication(); await app.locals.init(); const port=Number(process.env.PORT||3001); app.listen(port,()=>console.log(`A Little Inventory chạy tại http://localhost:${port}`));
+  await app.locals.init(); const port=Number(process.env.PORT||3001); app.listen(port,()=>console.log(`A Little Inventory chạy tại http://localhost:${port}`));
 }

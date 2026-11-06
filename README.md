@@ -46,13 +46,13 @@ Bộ kiểm thử bao phủ đăng nhập ba vai trò, chặn truy cập không 
 
 ## Deploy lên Vercel
 
-Repository root là thư mục này. Vercel tự nhận Node.js và dùng `api/index.js`; file `vercel.json` định tuyến API tới Express function, còn `public/` chứa giao diện. Tạo các biến môi trường Production (và Preview nếu cần):
+Repository root là thư mục này. Chọn Framework Preset `Express`; `server.js` export ứng dụng Express, còn `public/` chứa giao diện tĩnh. Giữ Build Command và Output Directory theo mặc định Vercel (không override). Tạo các biến môi trường Production (và Preview nếu cần):
 
 - `DATABASE_URL`: connection string **Transaction pooler** lấy trong Supabase → Connect. Dùng URL đầy đủ, giữ bí mật.
 - `SESSION_SECRET`: chuỗi ngẫu nhiên dài, riêng tư.
 - SMTP variables tùy chọn như phần tích hợp email.
 
-Vercel function cần PostgreSQL qua transaction pooler; khi request đầu chạy, ứng dụng tự tạo bảng trạng thái và nạp dữ liệu mẫu nếu database còn trống. Đơn hàng, kho, thanh toán, người dùng demo, sessions và nhật ký dùng chung một hàng JSONB, được khóa giao dịch để giữ nhất quán giữa các request.
+Vercel function cần PostgreSQL qua transaction pooler; khi request đầu chạy, ứng dụng tự tạo bảng trạng thái và nạp dữ liệu mẫu nếu database còn trống. Đơn hàng, kho, thanh toán, người dùng demo, sessions và nhật ký dùng chung một hàng JSONB, được khóa giao dịch để giữ nhất quán giữa các request. Nếu thiếu biến môi trường, API trả lỗi cấu hình thay vì ghi nhầm vào filesystem tạm.
 
 ## Phạm vi và hạn chế
 
