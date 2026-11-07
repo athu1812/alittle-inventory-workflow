@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 
-const roles = ['employee', 'owner', 'admin'];
+const roles = ['employee', 'manager', 'admin'];
 const activeOrderStates = ['Draft', 'Approved', 'Sent', 'Partially Received'];
 const fail = (status, message) => Object.assign(new Error(message), { status });
 const required = (value, label) => {
@@ -18,9 +18,9 @@ export function createReferenceSeed(hashPassword) {
   const ref = { seq: {}, mailFail: false, users: [], suppliers: [], materials: [], ms: [], orders: [], details: [], receipts: [], rd: [], payments: [], txns: [], notifs: [], emails: [] };
   const next = type => (ref.seq[type] = (ref.seq[type] || 0) + 1);
   for (const [name, username, password, role] of [
-    ['Quản trị viên', 'admin', 'Admin@123', 'admin'],
-    ['Chủ quán', 'chuquan', 'Chuquan@123', 'owner'],
-    ['Nhân viên', 'nhanvien', 'Nhanvien@123', 'employee']
+    ['Trang Thư', 'admin', 'Admin@123', 'admin'],
+    ['Hoài Thương', 'hoaithuong', 'HoaiThuong@123', 'manager'],
+    ['Thuỳ Linh', 'thuylinh', 'ThuyLinh@123', 'employee']
   ]) ref.users.push({ user_id: next('u'), full_name: name, username, passwordHash: hashPassword(password), role, is_active: 1 });
   for (const [name, phone, email, address] of [
     ['Cà phê Tây Nguyên Phát', '0901000001', 'taynguyenphat@example.com', 'Buôn Ma Thuột, Đắk Lắk'],
@@ -32,6 +32,58 @@ export function createReferenceSeed(hashPassword) {
     ['Kem béo', 'hộp', 6, 15], ['Đường cát', 'kg', 10, 30], ['Siro vani', 'chai', 4, 9], ['Ly nhựa 500ml', 'cái', 300, 800]
   ]) ref.materials.push({ material_id: next('m'), material_name: name, unit, min_quantity: minimum, current_quantity: current, last_updated: new Date().toISOString() });
   for (const [material_id, supplier_id, unit_price, lead_time_hours] of [[1,1,120000,24],[2,1,220000,24],[3,2,28000,12],[4,2,26000,12],[5,2,95000,12],[3,3,30000,24],[6,3,22000,24],[7,3,85000,24],[8,3,600,24],[6,2,23500,12]]) ref.ms.push({ material_id, supplier_id, unit_price, lead_time_hours });
+  seedReferenceSamples(ref);
+  return ref;
+}
+
+function seedReferenceSamples(ref) {
+  if (ref.orders?.length || !ref.users?.length) return ref;
+  const now = Date.now(), stamp = hours => new Date(now - hours * 3600000).toISOString();
+  const [admin, manager, employee] = ref.users;
+  const next = type => (ref.seq[type] = (ref.seq[type] || 0) + 1);
+  const addOrder = (supplier_id, user, order_status, delivery_status, lines, hoursAgo) => {
+    const order_id = next('o');
+    ref.orders.push({ order_id, supplier_id, created_by:user.user_id, approved_by:order_status === 'Draft' ? null : admin.user_id,
+      order_date:stamp(hoursAgo), expected_delivery_at:stamp(Math.max(0,hoursAgo-12)), order_status, delivery_status,
+      note:'Dữ liệu mẫu để bạn xem thử quy trình.', reminder_count:0, last_reminder_at:null, sent_at:order_status === 'Draft' ? null : stamp(Math.max(0,hoursAgo-6)), late_flag:0, send_failed:0, auto_created:0 });
+    for (const [material_id, quantity] of lines) {
+      const price = ref.ms.find(x => x.material_id === material_id && x.supplier_id === supplier_id);
+      if (price) ref.details.push({ detail_id:next('d'), order_id, material_id, quantity, unit_price:price.unit_price });
+    }
+    return order_id;
+  };
+  addOrder(2, employee, 'Draft', 'Chờ nhận hàng', [[3,24],[4,12]], 7);
+  addOrder(1, employee, 'Sent', 'Chờ nhận hàng', [[1,8],[2,4]], 30);
+  const deliveredOrder = addOrder(3, admin, 'Sent', 'Đã giao', [[6,20],[7,4]], 20);
+  const partialOrder = addOrder(2, manager, 'Partially Received', 'Đã giao', [[3,30]], 44);
+  const receipt_id = next('r'), receipt_detail_id = next('rd');
+  ref.receipts.push({ receipt_id, order_id:partialOrder, received_by:employee.user_id, received_date:stamp(8), invoice_number:'HD-MAU-004', receipt_status:'Accepted', note:'Phiếu nhận mẫu.' });
+  ref.rd.push({ receipt_detail_id, receipt_id, material_id:3, actual_quantity:12, accepted_quantity:12, quality_status:'Đạt', check_note:'Mẫu đạt chất lượng', checked_by:employee.user_id, batch_no:'LOT-MAU-004', expiry_date:new Date(now + 90*86400000).toISOString().slice(0,10), remaining_quantity:12 });
+  ref.txns.push({ transaction_id:next('t'), material_id:3, receipt_detail_id, transaction_type:'Nhập kho', quantity:12, transaction_date:stamp(8), created_by:employee.user_id });
+  const milk = ref.materials.find(x=>x.material_id===3); milk.current_quantity += 12; milk.last_updated=stamp(8);
+  ref.sample_data_version = 1;
+  return { deliveredOrder, partialOrder };
+}
+
+export function migrateReferenceState(ref, hashPassword) {
+  ref.users ||= []; ref.orders ||= []; ref.details ||= []; ref.receipts ||= []; ref.rd ||= []; ref.txns ||= []; ref.notifs ||= []; ref.sessions ||= {}; ref.seq ||= {};
+  if (ref.account_profile_version !== 2) {
+    const profiles = [
+      { old:'chuquan', username:'hoaithuong', full_name:'Hoài Thương', role:'manager', password:'HoaiThuong@123' },
+      { old:'nhanvien', username:'thuylinh', full_name:'Thuỳ Linh', role:'employee', password:'ThuyLinh@123' },
+      { old:'admin', username:'admin', full_name:'Trang Thư', role:'admin', password:'Admin@123' }
+    ];
+    for (const profile of profiles) {
+      let user = ref.users.find(x => x.username === profile.old) || ref.users.find(x => x.username === profile.username);
+      if (!user) { user = { user_id:(ref.seq.u = (ref.seq.u || 0) + 1), is_active:1 }; ref.users.push(user); }
+      Object.assign(user, { username:profile.username, full_name:profile.full_name, role:profile.role, passwordHash:hashPassword(profile.password), is_active:user.is_active ?? 1 });
+    }
+    for (const user of ref.users) if (!['admin','hoaithuong','thuylinh'].includes(user.username) && user.role === 'owner') user.role = 'manager';
+    ref.account_profile_version = 2;
+  }
+  for (const notification of ref.notifs) if (notification.target_role === 'owner') notification.target_role = 'admin';
+  for (const order of ref.orders) if (['Sent','Partially Received'].includes(order.order_status) && !order.delivery_status) order.delivery_status = ref.receipts.some(x=>x.order_id===order.order_id) ? 'Đã giao' : 'Chờ nhận hàng';
+  if (!ref.orders.length) seedReferenceSamples(ref);
   return ref;
 }
 
@@ -114,14 +166,14 @@ export function registerReferenceApi(app, { getState, persist, hashPassword, che
       try {
         await writeEmail({ to: order.supplier_email, subject: `[A Little Đà Nẵng] Đơn đặt hàng #${order.order_id}`, text: body, order_id: order.order_id });
         const lead = Math.max(0, ...order.lines.map(x => db().ms.find(y => y.material_id === x.material_id && y.supplier_id === order.supplier_id)?.lead_time_hours ?? 24));
-        Object.assign(db().orders.find(x => x.order_id === order.order_id), { order_status: 'Sent', sent_at: new Date().toISOString(), expected_delivery_at: new Date(Date.now() + (lead || 24) * 3600000).toISOString(), send_failed: 0, reminder_count: 0, late_flag: 0, last_reminder_at: null });
+        Object.assign(db().orders.find(x => x.order_id === order.order_id), { order_status: 'Sent', delivery_status:'Chờ nhận hàng', sent_at: new Date().toISOString(), expected_delivery_at: new Date(Date.now() + (lead || 24) * 3600000).toISOString(), send_failed: 0, reminder_count: 0, late_flag: 0, last_reminder_at: null });
         return { sent: true, attempts: attempt, channel: db().emails[0]?.status };
       } catch (error) { lastError = error; }
     }
     const target = db().orders.find(x => x.order_id === order.order_id);
     target.send_failed = 1;
     addNote(orderId, `Gửi đơn thất bại sau 3 lần thử: ${lastError?.message || 'lỗi không xác định'}. Cần gửi thủ công.`);
-    notify('owner', `Gửi đơn #${orderId} cho ${order.supplier_name} thất bại — vui lòng thử lại hoặc gửi thủ công`, orderId);
+    notify('admin', `Gửi đơn #${orderId} cho ${order.supplier_name} thất bại — vui lòng thử lại hoặc gửi thủ công`, orderId);
     return { sent: false, attempts: 3, error: lastError?.message || 'Gửi email thất bại' };
   };
   const orderStatusSet = (order, allowed, message) => { if (!allowed.includes(order.order_status)) throw fail(400, message || `Đơn đang ở trạng thái ${order.order_status}, không thể thực hiện thao tác này`); };
@@ -142,7 +194,7 @@ export function registerReferenceApi(app, { getState, persist, hashPassword, che
       db().orders.push({ order_id, supplier_id, created_by: userId, approved_by: null, order_date: new Date().toISOString(), expected_delivery_at: null, order_status: 'Draft', note: null, reminder_count: 0, last_reminder_at: null, sent_at: null, late_flag: 0, send_failed: 0, auto_created: 1 });
       db().details.push(...lines.map(line => ({ detail_id: next('d'), order_id, ...line })));
       created.push(order_id);
-      notify('owner', `Đơn nháp #${order_id} được tạo tự động (${lines.length} nguyên liệu dưới định mức) — cần duyệt`, order_id);
+      notify('admin', `Đơn nháp #${order_id} được tạo tự động (${lines.length} nguyên liệu dưới định mức) — cần duyệt`, order_id);
     }
     return { created, skipped, low_count: low.length };
   };
@@ -153,7 +205,7 @@ export function registerReferenceApi(app, { getState, persist, hashPassword, che
       try { await writeEmail({ to: supplier(order.supplier_id)?.email, subject: `[A Little Đà Nẵng] Nhắc giao hàng đơn #${order.order_id}`, text: `Đơn #${order.order_id} đã quá hạn giao dự kiến. Vui lòng cập nhật tình trạng.`, order_id: order.order_id }); }
       catch (error) { addNote(order.order_id, `Nhắc NCC thất bại: ${error.message}`); }
       order.reminder_count += 1; order.last_reminder_at = new Date().toISOString(); order.late_flag = +(order.reminder_count >= 2);
-      if (order.reminder_count >= 2) notify('owner', `Đơn #${order.order_id} (${supplier(order.supplier_id)?.supplier_name}) giao chậm, đã nhắc 2 lần — chọn đổi nhà cung cấp hoặc hủy đơn`, order.order_id);
+      if (order.reminder_count >= 2) notify('admin', `Đơn #${order.order_id} (${supplier(order.supplier_id)?.supplier_name}) giao chậm, đã nhắc 2 lần — chọn đổi nhà cung cấp hoặc hủy đơn`, order.order_id);
       reminded.push({ order_id: order.order_id, reminder_count: order.reminder_count, escalated: order.reminder_count >= 2 });
     }
     return { reminded };
@@ -178,6 +230,7 @@ export function registerReferenceApi(app, { getState, persist, hashPassword, che
   const receive = (orderId, userId, payload) => {
     const order = getOrder(orderId);
     if (!['Sent', 'Partially Received'].includes(order.order_status)) throw fail(400, 'Chỉ nhận hàng cho đơn đã gửi nhà cung cấp');
+    if (order.delivery_status !== 'Đã giao') throw fail(400, 'Hãy cập nhật trạng thái đơn thành “Đã giao” trước khi kiểm tra nhận hàng');
     if (!Array.isArray(payload.lines) || !payload.lines.length) throw fail(400, 'Cần ít nhất một dòng nhận hàng');
     const lines = new Map(order.lines.map(x => [x.material_id, x])); const seen = new Set();
     for (const line of payload.lines) {
@@ -206,9 +259,9 @@ export function registerReferenceApi(app, { getState, persist, hashPassword, che
     const complete = order.lines.every(line => (totals.get(line.material_id) || 0) >= line.quantity);
     const hasRejected = payload.lines.some(x => x.quality_status !== 'Đạt');
     const hasAccepted = [...totals.values()].some(quantity => quantity > 0);
-    db().orders.find(x => x.order_id === order.order_id).order_status = complete ? 'Received' : (hasAccepted ? 'Partially Received' : 'Sent');
-    if (hasRejected) notify('owner', `Phiếu nhận #${receiptId} của đơn #${order.order_id} có hàng không đạt — đã ghi nhận trả hàng và yêu cầu đổi`, order.order_id);
-    else if (complete) notify('owner', `Đơn #${order.order_id} đã nhận đủ hàng — cần xác nhận thanh toán`, order.order_id);
+    Object.assign(db().orders.find(x => x.order_id === order.order_id), { order_status:complete ? 'Received' : (hasAccepted ? 'Partially Received' : 'Sent'), delivery_status:'Đã giao' });
+    if (hasRejected) notify('admin', `Phiếu nhận #${receiptId} của đơn #${order.order_id} có hàng không đạt — đã ghi nhận trả hàng và yêu cầu đổi`, order.order_id);
+    else if (complete) notify('admin', `Đơn #${order.order_id} đã nhận đủ hàng — cần xác nhận thanh toán`, order.order_id);
     return { receipt, order: getOrder(order.order_id) };
   };
   const pay = (input, userId) => {
@@ -232,7 +285,7 @@ export function registerReferenceApi(app, { getState, persist, hashPassword, che
   const buildOrder = (order, role) => {
     const value = getOrder(order.order_id);
     value.receipts = db().receipts.filter(x => x.order_id === order.order_id);
-    if (role === 'owner') value.payments = db().payments.filter(x => x.order_id === order.order_id);
+    if (role === 'admin') value.payments = db().payments.filter(x => x.order_id === order.order_id);
     return value;
   };
 
@@ -272,24 +325,24 @@ export function registerReferenceApi(app, { getState, persist, hashPassword, che
       materials_total: db().materials.length,
       unread_notifications: db().notifs.filter(x => !x.is_read && x.target_role === req.refUser.role).length
     };
-    if (req.refUser.role === 'owner') result.total_debt = db().orders.filter(x => ['Received','Partially Received'].includes(x.order_status)).reduce((sum,x) => sum + getOrder(x.order_id).debt, 0);
+    if (req.refUser.role === 'admin') result.total_debt = db().orders.filter(x => ['Received','Partially Received'].includes(x.order_status)).reduce((sum,x) => sum + getOrder(x.order_id).debt, 0);
     res.json(result);
   });
-  route('get', '/materials', null, (_req,res) => res.json([...db().materials].sort((a,b) => a.material_name.localeCompare(b.material_name,'vi')).map(x => ({ ...x, is_low: +(x.current_quantity <= x.min_quantity) }))));
-  route('post', '/materials', ['owner','admin'], async (req,res) => {
+  route('get', '/materials', null, (_req,res) => res.json([...db().materials].sort((a,b) => a.material_name.localeCompare(b.material_name,'vi')).map(x => ({ ...x, supplier_ids:db().ms.filter(link=>link.material_id===x.material_id).map(link=>link.supplier_id), is_low: +(x.current_quantity <= x.min_quantity) }))));
+  route('post', '/materials', ['manager','admin'], async (req,res) => {
     const name = required(req.body?.material_name, 'Tên nguyên liệu');
     if (db().materials.some(x => x.material_name.toLocaleLowerCase('vi') === name.toLocaleLowerCase('vi'))) throw fail(409, 'Nguyên liệu đã tồn tại');
     const item = { material_id: next('m'), material_name: name, unit: required(req.body?.unit,'Đơn vị'), min_quantity: number(req.body?.min_quantity ?? 0,'Định mức tối thiểu',{min:0}), current_quantity: number(req.body?.current_quantity ?? 0,'Tồn hiện tại',{min:0}), last_updated: new Date().toISOString() };
     db().materials.push(item); await persist(); res.status(201).json({ material_id: item.material_id });
   });
-  route('put', '/materials/:id', ['owner','admin'], async (req,res) => {
+  route('put', '/materials/:id', ['manager','admin'], async (req,res) => {
     const item = material(req.params.id); if (!item) throw fail(404,'Không tìm thấy nguyên liệu');
     Object.assign(item, { material_name: required(req.body?.material_name ?? item.material_name,'Tên nguyên liệu'), unit: required(req.body?.unit ?? item.unit,'Đơn vị'), min_quantity: number(req.body?.min_quantity ?? item.min_quantity,'Định mức tối thiểu',{min:0}), last_updated: new Date().toISOString() });
     await persist(); res.json({ ok: true });
   });
-  route('post', '/materials/:id/consume', ['employee','owner'], async (req,res) => { const result = consume(Number(req.params.id),number(req.body?.quantity,'Số lượng',{min:0.0001}),req.refUser.user_id); await persist(); res.json(result); });
-  route('get', '/materials/:id/suppliers', null, (req,res) => res.json(db().ms.filter(x => x.material_id === Number(req.params.id)).map(x => ({ ...x, supplier_name: supplier(x.supplier_id)?.supplier_name || '' }))));
-  route('put', '/material-suppliers', ['owner','admin'], async (req,res) => {
+  route('post', '/materials/:id/consume', ['employee','manager','admin'], async (req,res) => { const result = consume(Number(req.params.id),number(req.body?.quantity,'Số lượng',{min:0.0001}),req.refUser.user_id); await persist(); res.json(result); });
+  route('get', '/materials/:id/suppliers', null, (req,res) => res.json(db().ms.filter(x => x.material_id === Number(req.params.id)).map(x => ({ ...x, supplier_name: supplier(x.supplier_id)?.supplier_name || '' })).sort((a,b)=>a.supplier_name.localeCompare(b.supplier_name,'vi'))));
+  route('put', '/material-suppliers', ['manager','admin'], async (req,res) => {
     const material_id = number(req.body?.material_id,'Nguyên liệu',{min:1,integer:true}), supplier_id = number(req.body?.supplier_id,'Nhà cung cấp',{min:1,integer:true});
     if (!material(material_id) || !supplier(supplier_id)) throw fail(400,'Nguyên liệu hoặc nhà cung cấp không tồn tại');
     const value = { material_id, supplier_id, unit_price: number(req.body?.unit_price,'Đơn giá',{min:0}), lead_time_hours: number(req.body?.lead_time_hours,'Thời gian giao',{min:0,integer:true}) };
@@ -298,13 +351,13 @@ export function registerReferenceApi(app, { getState, persist, hashPassword, che
     await persist(); res.json({ ok: true });
   });
   route('get', '/suppliers', null, (_req,res) => res.json([...db().suppliers].sort((a,b) => a.supplier_name.localeCompare(b.supplier_name,'vi'))));
-  route('post', '/suppliers', ['owner','admin'], async (req,res) => {
+  route('post', '/suppliers', ['manager','admin'], async (req,res) => {
     const body = req.body || {}, email = body.email ? required(body.email,'Email') : null;
     if (email && !emailPattern.test(email)) throw fail(400,'Email không hợp lệ');
     const item = { supplier_id: next('s'), supplier_name: required(body.supplier_name,'Tên nhà cung cấp'), phone: body.phone || null, email, address: body.address || null };
     db().suppliers.push(item); await persist(); res.status(201).json({ supplier_id: item.supplier_id });
   });
-  route('put', '/suppliers/:id', ['owner','admin'], async (req,res) => {
+  route('put', '/suppliers/:id', ['manager','admin'], async (req,res) => {
     const item = supplier(req.params.id); if (!item) throw fail(404,'Không tìm thấy nhà cung cấp');
     const body = req.body || {}, email = body.email === undefined ? item.email : (body.email ? required(body.email,'Email') : null);
     if (email && !emailPattern.test(email)) throw fail(400,'Email không hợp lệ');
@@ -318,20 +371,20 @@ export function registerReferenceApi(app, { getState, persist, hashPassword, che
   route('get', '/inventory-transactions', null, (_req,res) => res.json(db().txns.slice(0,200).map(x => ({ ...x, material_name: material(x.material_id)?.material_name || '' }))));
   route('get', '/orders', null, (req,res) => res.json(db().orders.filter(x => !req.query.status || x.order_status === req.query.status).sort((a,b) => b.order_id - a.order_id).map(x => ({ ...getOrder(x.order_id), supplier_name:supplier(x.supplier_id)?.supplier_name || '' }))));
   route('get', '/orders/:id', null, (req,res) => res.json(buildOrder(db().orders.find(x => x.order_id === Number(req.params.id)) || { order_id:Number(req.params.id) },req.refUser.role)));
-  route('post', '/orders', ['owner','employee'], async (req,res) => {
+  route('post', '/orders', ['admin','manager','employee'], async (req,res) => {
     const supplier_id = number(req.body?.supplier_id,'Nhà cung cấp',{min:1,integer:true});
     if (!supplier(supplier_id)) throw fail(400,'Nhà cung cấp không tồn tại');
     const order_id = next('o');
-    const created = { order_id,supplier_id,created_by:req.refUser.user_id,approved_by:null,order_date:new Date().toISOString(),expected_delivery_at:null,order_status:'Draft',note:req.body?.note || null,reminder_count:0,last_reminder_at:null,sent_at:null,late_flag:0,send_failed:0,auto_created:0 };
+    const created = { order_id,supplier_id,created_by:req.refUser.user_id,approved_by:null,order_date:new Date().toISOString(),expected_delivery_at:null,order_status:'Draft',delivery_status:null,note:req.body?.note || null,reminder_count:0,last_reminder_at:null,sent_at:null,late_flag:0,send_failed:0,auto_created:0 };
     db().orders.push(created);
     try { setLines(order_id,supplier_id,req.body?.lines); }
     catch (error) { db().orders = db().orders.filter(x => x.order_id !== order_id); throw error; }
     let send = null;
-    if (req.refUser.role === 'owner') { created.order_status = 'Approved'; created.approved_by = req.refUser.user_id; send = await sendOrder(order_id); }
-    else notify('owner',`Nhân viên ${req.refUser.full_name} gửi đơn #${order_id} chờ chủ quán duyệt`,order_id);
+    if (req.refUser.role === 'admin') { created.order_status = 'Approved'; created.approved_by = req.refUser.user_id; send = await sendOrder(order_id); }
+    else notify('admin',`Nhân viên ${req.refUser.full_name} gửi đơn #${order_id} chờ chủ quán duyệt`,order_id);
     await persist(); res.status(201).json({ ...getOrder(order_id), send });
   });
-  route('put', '/orders/:id', ['owner'], async (req,res) => {
+  route('put', '/orders/:id', ['admin'], async (req,res) => {
     const order = getOrder(req.params.id); orderStatusSet(order,['Draft'],'Chỉ được chỉnh sửa đơn nháp');
     const supplier_id = req.body?.supplier_id == null ? order.supplier_id : number(req.body.supplier_id,'Nhà cung cấp',{min:1,integer:true});
     if (!supplier(supplier_id)) throw fail(400,'Nhà cung cấp không tồn tại');
@@ -341,24 +394,33 @@ export function registerReferenceApi(app, { getState, persist, hashPassword, che
     db().orders.find(x => x.order_id === order.order_id).supplier_id = supplier_id;
     await persist(); res.json(getOrder(order.order_id));
   });
-  route('post', '/orders/:id/approve', ['owner'], async (req,res) => {
+  route('post', '/orders/:id/delivery-status', ['employee','manager','admin'], async (req,res) => {
+    const order = db().orders.find(x => x.order_id === Number(req.params.id));
+    if (!order || !['Sent','Partially Received'].includes(order.order_status)) throw fail(409,'Chỉ cập nhật trạng thái đơn đang chờ nhận hàng');
+    const status = req.body?.delivery_status;
+    if (!['Đã giao','Chờ nhận hàng'].includes(status)) throw fail(400,'Trạng thái giao hàng không hợp lệ');
+    order.delivery_status = status;
+    await persist();
+    res.json({ ok:true, delivery_status:status });
+  });
+  route('post', '/orders/:id/approve', ['admin'], async (req,res) => {
     const order = getOrder(req.params.id); orderStatusSet(order,['Draft'],'Chỉ duyệt được đơn nháp');
     const raw = db().orders.find(x => x.order_id === order.order_id); raw.order_status = 'Approved'; raw.approved_by = req.refUser.user_id;
     const send = await sendOrder(order.order_id); await persist(); res.json({ order:getOrder(order.order_id),send });
   });
-  route('post', '/orders/:id/reject', ['owner'], async (req,res) => {
+  route('post', '/orders/:id/reject', ['admin'], async (req,res) => {
     const order = getOrder(req.params.id); orderStatusSet(order,['Draft'],'Chỉ từ chối được đơn nháp');
     const reason = required(req.body?.reason,'Lý do'); db().orders.find(x => x.order_id === order.order_id).order_status = 'Cancelled'; addNote(order.order_id,`Chủ quán từ chối đơn: ${reason}`); await persist(); res.json(getOrder(order.order_id));
   });
-  route('post', '/orders/:id/send', ['owner'], async (req,res) => { const result = await sendOrder(req.params.id); await persist(); res.json(result); });
-  route('post', '/orders/:id/cancel', ['owner'], async (req,res) => {
+  route('post', '/orders/:id/send', ['admin'], async (req,res) => { const result = await sendOrder(req.params.id); await persist(); res.json(result); });
+  route('post', '/orders/:id/cancel', ['admin'], async (req,res) => {
     const order = getOrder(req.params.id); orderStatusSet(order,['Draft','Approved','Sent'],'Không thể hủy đơn ở trạng thái này');
     const reason = required(req.body?.reason,'Lý do'); db().orders.find(x => x.order_id === order.order_id).order_status = 'Cancelled'; addNote(order.order_id,`Hủy đơn (user ${req.refUser.user_id}): ${reason}`);
     let supplier_notified = false;
     if (order.order_status === 'Sent') { try { await writeEmail({to:order.supplier_email,subject:`[A Little Đà Nẵng] HỦY đơn đặt hàng #${order.order_id}`,text:`Quán xin hủy đơn #${order.order_id}. Lý do: ${reason}`,order_id:order.order_id}); supplier_notified = true; } catch {} }
     await persist(); res.json({order:getOrder(order.order_id),supplier_notified});
   });
-  route('post', '/orders/:id/switch-supplier', ['owner'], async (req,res) => {
+  route('post', '/orders/:id/switch-supplier', ['admin'], async (req,res) => {
     const order = getOrder(req.params.id);
     if (!(order.order_status === 'Sent' && order.late_flag || order.order_status === 'Approved' && order.send_failed)) throw fail(400,'Chỉ đổi nhà cung cấp khi đơn giao chậm (đã nhắc ≥ 2 lần) hoặc gửi đơn thất bại');
     const nextSupplier = number(req.body?.supplier_id,'Nhà cung cấp',{min:1,integer:true});
@@ -374,14 +436,14 @@ export function registerReferenceApi(app, { getState, persist, hashPassword, che
     const send = await sendOrder(order.order_id); await persist(); res.json({order:getOrder(order.order_id),send});
   });
   route('get', '/receipts', null, (_req,res) => res.json([...db().receipts].reverse()));
-  route('post', '/receipts', ['employee','owner'], async (req,res) => { const result = receive(number(req.body?.order_id,'Mã đơn',{min:1,integer:true}),req.refUser.user_id,req.body || {}); await persist(); res.status(201).json(result); });
-  route('post', '/payments', ['owner'], async (req,res) => { const result = pay(req.body || {},req.refUser.user_id); await persist(); res.status(201).json(result); });
-  route('get', '/debts', ['owner'], (_req,res) => res.json(db().orders.filter(x => ['Received','Partially Received'].includes(x.order_status)).sort((a,b) => b.order_id - a.order_id).map(x => { const order=getOrder(x.order_id); return {order_id:x.order_id,supplier_name:order.supplier_name,order_status:x.order_status,total:order.total,paid:order.paid,debt:order.debt}; })));
+  route('post', '/receipts', ['employee','manager','admin'], async (req,res) => { const result = receive(number(req.body?.order_id,'Mã đơn',{min:1,integer:true}),req.refUser.user_id,req.body || {}); await persist(); res.status(201).json(result); });
+  route('post', '/payments', ['admin'], async (req,res) => { const result = pay(req.body || {},req.refUser.user_id); await persist(); res.status(201).json(result); });
+  route('get', '/debts', ['admin'], (_req,res) => res.json(db().orders.filter(x => ['Received','Partially Received'].includes(x.order_status)).sort((a,b) => b.order_id - a.order_id).map(x => { const order=getOrder(x.order_id); return {order_id:x.order_id,supplier_name:order.supplier_name,order_status:x.order_status,total:order.total,paid:order.paid,debt:order.debt}; })));
   route('get', '/notifications', null, (req,res) => res.json(db().notifs.filter(x => x.target_role === req.refUser.role).sort((a,b) => b.id - a.id).slice(0,100)));
   route('post', '/notifications/:id/read', null, async (req,res) => { const item = db().notifs.find(x => x.id === Number(req.params.id) && x.target_role === req.refUser.role); if (item) item.is_read=1; await persist(); res.json({ok:true}); });
-  route('get', '/emails', ['owner','admin'], (_req,res) => res.json(db().emails.slice(0,100)));
-  route('post', '/jobs/inventory-check', ['owner','admin'], async (req,res) => { const result = inventoryCheck(req.refUser.user_id); await persist(); res.json(result); });
-  route('post', '/jobs/reminders', ['owner','admin'], async (req,res) => { const result = await reminders(Number(req.body?.simulate_hours_ahead || 0)); await persist(); res.json(result); });
+  route('get', '/emails', ['manager','admin'], (_req,res) => res.json(db().emails.slice(0,100)));
+  route('post', '/jobs/inventory-check', ['manager','admin'], async (req,res) => { const result = inventoryCheck(req.refUser.user_id); await persist(); res.json(result); });
+  route('post', '/jobs/reminders', ['manager','admin'], async (req,res) => { const result = await reminders(Number(req.body?.simulate_hours_ahead || 0)); await persist(); res.json(result); });
   route('post', '/dev/mail-failure', ['admin'], async (req,res) => { db().mailFail=!!req.body?.enabled; await persist(); res.json({forceFail:db().mailFail}); });
   route('get', '/users', ['admin'], (_req,res) => res.json(db().users.map(({passwordHash,...user}) => user)));
   route('post', '/users', ['admin'], async (req,res) => {

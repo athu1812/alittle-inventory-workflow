@@ -16,17 +16,18 @@ Mở `http://localhost:3001`. Không có `DATABASE_URL`, ứng dụng tạo `dat
 
 ## Vai trò demo
 
-- Quản trị viên: `admin` / `Admin@123` — quản lý tài khoản và dữ liệu demo.
-- Chủ quán: `chuquan` / `Chuquan@123` — quản lý danh mục, duyệt/gửi đơn, xử lý NCC và công nợ.
-- Nhân viên: `nhanvien` / `Nhanvien@123` — lập đơn chờ chủ quán duyệt, nhận hàng và xuất kho.
+- Chủ quán (Trang Thư): `admin` / `Admin@123` — duyệt đơn, tạo đơn gửi thẳng NCC, thanh toán, công nợ và quản lý tài khoản.
+- Nhân viên quản lí (Hoài Thương): `hoaithuong` / `HoaiThuong@123` — quản lý nguyên liệu, nhà cung cấp, bảng giá/thời gian giao, nhận hàng và lập đơn chờ chủ quán duyệt.
+- Nhân viên (Thuỳ Linh): `thuylinh` / `ThuyLinh@123` — lập đơn chờ chủ quán duyệt, nhận hàng và xuất kho.
 
 Mật khẩu được băm bằng scrypt trước khi lưu. Đổi các tài khoản demo trước khi dùng cho mục đích ngoài lớp học. `SESSION_SECRET` cần là giá trị ngẫu nhiên dài, riêng tư.
 
 ## Chức năng
 
 - Dashboard: tồn dưới định mức, đơn theo trạng thái, đơn trễ, thông báo chưa đọc và công nợ.
-- Danh mục nguyên liệu, nhà cung cấp và bảng giá/lead time theo từng cặp nguyên liệu–NCC.
-- Đơn nhiều dòng: nhân viên gửi chờ duyệt; đơn do chủ quán tạo đi thẳng tới NCC. Có duyệt, từ chối, hủy, gửi lại và đổi NCC khi đủ điều kiện.
+- Danh mục nguyên liệu, nhà cung cấp và bảng giá/lead time theo từng cặp nguyên liệu–NCC. Bảng giá được nhóm theo NCC và có thể chỉnh sửa.
+- Đơn nhiều dòng: nhân viên gửi chờ duyệt; đơn do chủ quán tạo đi thẳng tới NCC. Khi lập đơn, chọn NCC trước để lọc nguyên liệu và xác nhận trước khi tạo.
+- Nhận hàng hiển thị ngay các đơn đang chờ; cập nhật “Đã giao” hoặc “Chờ nhận hàng” trước khi kiểm tra chất lượng.
 - Kiểm kho tạo đơn nháp tự động theo NCC có giá tốt/lead time ngắn; nhắc giao hàng, email outbox và nhật ký gửi.
 - Nhận hàng nhiều dòng, kiểm tra chất lượng/hạn dùng, ghi lô và biến động kho; xuất kho theo FIFO.
 - Thanh toán đủ, một phần, ghi nợ; quản lý người dùng theo vai trò; thông báo theo vai trò.
@@ -52,7 +53,7 @@ Repository root là thư mục này. Chọn Framework Preset `Express`; `server.
 - `SESSION_SECRET`: chuỗi ngẫu nhiên dài, riêng tư.
 - SMTP variables tùy chọn như phần tích hợp email.
 
-Vercel cần PostgreSQL qua transaction pooler; request đầu tự tạo bảng trạng thái, nạp dữ liệu demo khi database trống. Dữ liệu được khóa theo giao dịch PostgreSQL để hạn chế ghi đè giữa các request. Nếu thiếu biến môi trường, API trả lỗi cấu hình thay vì ghi vào filesystem tạm.
+Vercel cần PostgreSQL qua transaction pooler; request đầu tự tạo bảng trạng thái, nạp tài khoản, nhà cung cấp, nguyên liệu, bảng giá, đơn mẫu và phiếu nhận mẫu khi database trống. Dữ liệu được khóa theo giao dịch PostgreSQL để hạn chế ghi đè giữa các request. Nếu thiếu biến môi trường, API trả lỗi cấu hình thay vì ghi vào filesystem tạm.
 
 ## Phạm vi và hạn chế
 

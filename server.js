@@ -7,7 +7,7 @@ import { readFile, writeFile, rename, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
-import { createReferenceSeed, registerReferenceApi } from './reference-api.js';
+import { createReferenceSeed, migrateReferenceState, registerReferenceApi } from './reference-api.js';
 
 dotenv.config();
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -76,7 +76,7 @@ export function createApplication({ storePath = process.env.STORE_PATH || path.j
         catch (e) { if (e.code !== 'ENOENT') throw e; state = seed(); }
       }
       state.sessions ||= {};
-      state.reference ||= createReferenceSeed(hashPassword);
+      state.reference = migrateReferenceState(state.reference || createReferenceSeed(hashPassword), hashPassword);
       state.reference.sessions ||= {};
       if (!Array.isArray(state.aiDiary)) state.aiDiary = [];
       const existingIds = new Set(state.aiDiary.map(x=>x.id));
