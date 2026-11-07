@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 
-const roles = ['employee', 'admin'];
+const roles = ['employee', 'admin', 'warehouse'];
 const activeOrderStates = ['Draft', 'Approved', 'Sent', 'Partially Received'];
 const fail = (status, message) => Object.assign(new Error(message), { status });
 const required = (value, label) => {
@@ -20,7 +20,8 @@ export function createReferenceSeed(hashPassword) {
   for (const [name, username, password, role] of [
     ['Trang Thư', 'admin', 'Admin@123', 'admin'],
     ['Hoài Thương', 'hoaithuong', 'HoaiThuong@123', 'employee'],
-    ['Thuỳ Linh', 'thuylinh', 'ThuyLinh@123', 'employee']
+    ['Thuỳ Linh', 'thuylinh', 'ThuyLinh@123', 'employee'],
+    ['Nhân viên kho', 'nhanvienkho', 'Kho@12345', 'warehouse']
   ]) ref.users.push({ user_id: next('u'), full_name: name, username, passwordHash: hashPassword(password), role, is_active: 1 });
   for (const [name, phone, email, address] of [
     ['Cà phê Tây Nguyên Phát', '0901000001', 'taynguyenphat@example.com', 'Buôn Ma Thuột, Đắk Lắk'],
@@ -67,7 +68,7 @@ function seedReferenceSamples(ref) {
 
 export function migrateReferenceState(ref, hashPassword) {
   ref.users ||= []; ref.orders ||= []; ref.details ||= []; ref.receipts ||= []; ref.rd ||= []; ref.txns ||= []; ref.notifs ||= []; ref.sessions ||= {}; ref.seq ||= {};
-  if (ref.account_profile_version !== 3) {
+  if ((ref.account_profile_version || 0) < 3) {
     const profiles = [
       { old:'chuquan', username:'hoaithuong', full_name:'Hoài Thương', role:'employee', password:'HoaiThuong@123' },
       { old:'nhanvien', username:'thuylinh', full_name:'Thuỳ Linh', role:'employee', password:'ThuyLinh@123' },
@@ -80,6 +81,26 @@ export function migrateReferenceState(ref, hashPassword) {
     }
     for (const user of ref.users) if (user.role === 'manager' || user.role === 'owner') user.role = 'employee';
     ref.account_profile_version = 3;
+  }
+  if ((ref.account_profile_version || 0) < 4) {
+    let warehouseUser = ref.users.find(x => x.username === 'nhanvienkho' || x.username === 'kho');
+    if (!warehouseUser) {
+      warehouseUser = { user_id:(ref.seq.u = (ref.seq.u || 0) + 1), username:'kho', full_name:'Nhân viên kho', passwordHash:hashPassword('Kho@12345'), is_active:1 };
+      ref.users.push(warehouseUser);
+    }
+    warehouseUser.role = 'warehouse';
+    warehouseUser.full_name ||= 'Nhân viên kho';
+    warehouseUser.is_active ??= 1;
+    ref.account_profile_version = 4;
+  }
+  if ((ref.account_profile_version || 0) < 5) {
+    const warehouseUser = ref.users.find(x => x.username === 'nhanvienkho') || ref.users.find(x => x.username === 'kho' && x.role === 'warehouse');
+    if (warehouseUser) {
+      warehouseUser.username = 'nhanvienkho';
+      warehouseUser.full_name = 'Nhân viên kho';
+      warehouseUser.role = 'warehouse';
+    }
+    ref.account_profile_version = 5;
   }
   for (const notification of ref.notifs) if (notification.target_role === 'owner') notification.target_role = 'admin';
   for (const notification of ref.notifs) if (notification.target_role === 'manager') notification.target_role = 'employee';
@@ -114,6 +135,9 @@ export function registerReferenceApi(app, { getState, persist, hashPassword, che
     nextHandler();
   };
   const route = (method, path, allowedRoles, fn) => app[method](`/api${path}`, auth, (req, res, nextHandler) => {
+    const warehouseReadOnlyRoutes = method === 'get' && (['/auth/me', '/materials', '/material-suppliers', '/batches', '/inventory-transactions'].includes(path) || /^\/materials\/\:id\/suppliers$/.test(path));
+    const warehouseFifoRoutes = (method === 'post' && /^\/materials\/\:id\/consume$/.test(path)) || (method === 'post' && path === '/auth/logout');
+    if (req.refUser.role === 'warehouse' && !warehouseReadOnlyRoutes && !warehouseFifoRoutes) return res.status(403).json({ error: 'Nhân viên kho chỉ được truy cập Nguyên liệu & tồn kho và Lô hàng FIFO.' });
     if (allowedRoles && !allowedRoles.includes(req.refUser.role)) return res.status(403).json({ error: 'Bạn không có quyền thực hiện chức năng này' });
     return wrap(fn)(req, res, nextHandler);
   });
@@ -367,7 +391,7 @@ export function registerReferenceApi(app, { getState, persist, hashPassword, che
     await persist(); res.json({ ok: true });
   });
   route('delete', '/materials/:id', ['admin'], async (req,res) => { const item=material(req.params.id); if(!item||item.is_active===0)throw fail(404,'Không tìm thấy nguyên liệu đang hoạt động'); item.is_active=0; item.last_updated=new Date().toISOString(); await persist(); res.json({ok:true}); });
-  route('post', '/materials/:id/consume', ['employee','admin'], async (req,res) => { const result = consume(Number(req.params.id),number(req.body?.quantity,'Số lượng',{min:0.0001}),req.refUser.user_id); await persist(); res.json(result); });
+  route('post', '/materials/:id/consume', ['employee','admin','warehouse'], async (req,res) => { const result = consume(Number(req.params.id),number(req.body?.quantity,'Số lượng',{min:0.0001}),req.refUser.user_id); await persist(); res.json(result); });
   route('get', '/materials/:id/suppliers', null, (req,res) => res.json(db().ms.filter(x => x.material_id === Number(req.params.id)&&supplier(x.supplier_id)?.is_active!==0).map(x => ({ ...x, supplier_name: supplier(x.supplier_id)?.supplier_name || '' })).sort((a,b)=>a.supplier_name.localeCompare(b.supplier_name,'vi'))));
   route('get', '/material-suppliers', null, (_req,res) => res.json(db().ms.filter(x=>material(x.material_id)?.is_active!==0&&supplier(x.supplier_id)?.is_active!==0).map(x=>({...x,material_name:material(x.material_id)?.material_name||'',supplier_name:supplier(x.supplier_id)?.supplier_name||''})).sort((a,b)=>a.supplier_name.localeCompare(b.supplier_name,'vi')||a.material_name.localeCompare(b.material_name,'vi'))));
   route('put', '/material-suppliers', ['admin'], async (req,res) => {
@@ -393,11 +417,11 @@ export function registerReferenceApi(app, { getState, persist, hashPassword, che
     await persist(); res.json({ ok:true });
   });
   route('delete', '/suppliers/:id', ['admin'], async (req,res) => { const item=supplier(req.params.id); if(!item||item.is_active===0)throw fail(404,'Không tìm thấy nhà cung cấp đang hoạt động'); item.is_active=0; await persist(); res.json({ok:true}); });
-  route('get', '/batches', null, (_req,res) => res.json(db().rd.filter(x => x.accepted_quantity > 0).map(x => {
+  route('get', '/batches', ['employee','admin','warehouse'], (_req,res) => res.json(db().rd.filter(x => x.accepted_quantity > 0).map(x => {
     const receipt = db().receipts.find(y => y.receipt_id === x.receipt_id), item = material(x.material_id);
     return { receipt_detail_id:x.receipt_detail_id,batch_no:x.batch_no,material_id:x.material_id,material_name:item?.material_name || '',unit:item?.unit || '',accepted_quantity:x.accepted_quantity,remaining_quantity:x.remaining_quantity,expiry_date:x.expiry_date,received_date:receipt?.received_date,order_id:receipt?.order_id };
   }).sort((a,b) => (a.remaining_quantity === 0) - (b.remaining_quantity === 0) || String(a.received_date).localeCompare(String(b.received_date)))));
-  route('get', '/inventory-transactions', null, (_req,res) => res.json(db().txns.slice(0,200).map(x => ({ ...x, material_name: material(x.material_id)?.material_name || '' }))));
+  route('get', '/inventory-transactions', ['employee','admin','warehouse'], (_req,res) => res.json(db().txns.slice(0,200).map(x => ({ ...x, material_name: material(x.material_id)?.material_name || '' }))));
   route('get', '/orders', null, (req,res) => res.json(db().orders.filter(x => !req.query.status || x.order_status === req.query.status).sort((a,b) => b.order_id - a.order_id).map(x => ({ ...getOrder(x.order_id), supplier_name:supplier(x.supplier_id)?.supplier_name || '' }))));
   route('get', '/orders/:id', null, (req,res) => res.json(buildOrder(db().orders.find(x => x.order_id === Number(req.params.id)) || { order_id:Number(req.params.id) },req.refUser.role)));
   route('post', '/orders', ['admin','employee'], async (req,res) => {

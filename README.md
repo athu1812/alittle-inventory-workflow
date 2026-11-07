@@ -19,6 +19,7 @@ Mở `http://localhost:3001`. Không có `DATABASE_URL`, ứng dụng tạo `dat
 - Chủ quán (Trang Thư): `admin` / `Admin@123` — duyệt đơn, tạo đơn gửi thẳng NCC, thanh toán, công nợ và quản lý tài khoản.
 - Nhân viên (Hoài Thương): `hoaithuong` / `HoaiThuong@123` — lập đơn chờ chủ quán duyệt, nhận hàng và xuất kho.
 - Nhân viên (Thuỳ Linh): `thuylinh` / `ThuyLinh@123` — lập đơn chờ chủ quán duyệt, nhận hàng và xuất kho.
+- Nhân viên kho: `nhanvienkho` / `Kho@12345` — chỉ truy cập Nguyên liệu & tồn kho và Lô hàng FIFO; có thể xuất kho theo FIFO, không được tạo đơn, nhận hàng hay quản lý danh mục.
 
 Mật khẩu được băm bằng scrypt trước khi lưu. Đổi các tài khoản demo trước khi dùng cho mục đích ngoài lớp học. `SESSION_SECRET` cần là giá trị ngẫu nhiên dài, riêng tư.
 
@@ -32,6 +33,7 @@ Mật khẩu được băm bằng scrypt trước khi lưu. Đổi các tài kho
 - Nhận hàng nhiều dòng, kiểm tra chất lượng/hạn dùng, ghi lô và biến động kho; xuất kho theo FIFO.
 - Thanh toán đủ, một phần, ghi nợ; quản lý người dùng theo vai trò; thông báo theo vai trò.
 - API kiểm tra vai trò ở server. Mật khẩu và session không lưu dạng rõ.
+- Nhân viên kho chỉ được mở `/materials` và `/batches`; API phía máy chủ cũng chặn các trang và thao tác ngoài phạm vi này. Quyền sửa/xóa danh mục nguyên liệu và nhà cung cấp vẫn thuộc Chủ quán.
 
 ## Tích hợp email bên ngoài
 
