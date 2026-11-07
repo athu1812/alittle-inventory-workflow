@@ -17,7 +17,7 @@ Mở `http://localhost:3001`. Không có `DATABASE_URL`, ứng dụng tạo `dat
 ## Vai trò demo
 
 - Chủ quán (Trang Thư): `admin` / `Admin@123` — duyệt đơn, tạo đơn gửi thẳng NCC, thanh toán, công nợ và quản lý tài khoản.
-- Nhân viên quản lí (Hoài Thương): `hoaithuong` / `HoaiThuong@123` — quản lý nguyên liệu, nhà cung cấp, bảng giá/thời gian giao, nhận hàng và lập đơn chờ chủ quán duyệt.
+- Nhân viên (Hoài Thương): `hoaithuong` / `HoaiThuong@123` — lập đơn chờ chủ quán duyệt, nhận hàng và xuất kho.
 - Nhân viên (Thuỳ Linh): `thuylinh` / `ThuyLinh@123` — lập đơn chờ chủ quán duyệt, nhận hàng và xuất kho.
 
 Mật khẩu được băm bằng scrypt trước khi lưu. Đổi các tài khoản demo trước khi dùng cho mục đích ngoài lớp học. `SESSION_SECRET` cần là giá trị ngẫu nhiên dài, riêng tư.
@@ -25,7 +25,7 @@ Mật khẩu được băm bằng scrypt trước khi lưu. Đổi các tài kho
 ## Chức năng
 
 - Dashboard: tồn dưới định mức, đơn theo trạng thái, đơn trễ, thông báo chưa đọc và công nợ.
-- Danh mục nguyên liệu, nhà cung cấp và bảng giá/lead time theo từng cặp nguyên liệu–NCC. Bảng giá được nhóm theo NCC và có thể chỉnh sửa.
+- Danh mục nguyên liệu, nhà cung cấp và bảng giá/lead time theo từng cặp nguyên liệu–NCC. Bảng giá được nhóm theo NCC và có thể chỉnh sửa; nguyên liệu/NCC được xóa mềm để bảo toàn lịch sử đơn.
 - Đơn nhiều dòng: nhân viên gửi chờ duyệt; đơn do chủ quán tạo đi thẳng tới NCC. Khi lập đơn, chọn NCC trước để lọc nguyên liệu và xác nhận trước khi tạo.
 - Nhận hàng hiển thị ngay các đơn đang chờ; cập nhật “Đã giao” hoặc “Chờ nhận hàng” trước khi kiểm tra chất lượng.
 - Kiểm kho tạo đơn nháp tự động theo NCC có giá tốt/lead time ngắn; nhắc giao hàng, email outbox và nhật ký gửi.
