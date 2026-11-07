@@ -7,6 +7,7 @@ import { readFile, writeFile, rename, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
+import { createReferenceSeed, registerReferenceApi } from './reference-api.js';
 
 dotenv.config();
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -32,7 +33,7 @@ const seed = () => ({
     {id:'AI-0011',author:'Nhóm',prompt:'Chủ quán không cần gửi đơn duyệt, chỉ có nhân viên mới cần gửi đơn duyệt, chủ quán tạo đơn là đi thẳng tới NCC luôn. Làm đẹp web và thu gọn nhật ký còn đơn nhập/đơn trả lại, hiện số lượng và mã đơn.',result:'Điều chỉnh backend để đơn nhân viên chờ duyệt, đơn chủ quán chuyển trực tiếp sang trạng thái gửi NCC; thêm ghi nhận phần nhận/nhập/trả và lọc nhật ký theo hai sự kiện. Làm mới giao diện với icon và tông màu cà phê.',evaluation:'Mã frontend và backend đã được cập nhật; chưa chạy lại bộ kiểm thử trong lượt chỉnh sửa này. SMTP chưa cấu hình nên gửi email NCC thật chưa xác minh.',adjustment:'Cập nhật hướng dẫn, kiểm tra mã cú pháp, khởi động lại web và nhờ nhóm cấu hình SMTP/review luồng thực tế.',outcome:'success',failurePattern:'',at:new Date().toISOString()},
     {id:'AI-0012',author:'Nhóm',prompt:'M có thể chỉnh lại web theo dạng như trang hethongcapbangdiem-due.vercel.app không, giữ nghiệp vụ nhưng build deploy công khai?',result:'Tổ chức lại trang đăng nhập thành cổng nghiệp vụ với header, điều hướng, form đăng nhập, thẻ truy cập nhanh cho ba vai trò; giữ nhận diện A Little màu nâu ấm. Xác định Vercel cần repo Git và PostgreSQL bền vững thay cho JSON cục bộ.',evaluation:'Giao diện local đã mở được. URL công khai chưa thể tạo khi repo chưa có source commit và database chưa kết nối.',adjustment:'Chuẩn bị adapter PostgreSQL cho serverless và cấu hình Vercel; xin người dùng tạo Supabase project để thêm bí mật qua dashboard.',outcome:'success',failurePattern:'',at:new Date().toISOString()},
     {id:'AI-0013',author:'Nhóm',prompt:'Kết nối repository athu1812/alittle-inventory-workflow với Vercel và Supabase để đưa ứng dụng lên địa chỉ công khai.',result:'Khởi tạo repository local, đặt origin GitHub; thêm backend PostgreSQL dùng transaction row lock và session lưu bền vững; export app Express theo preset Vercel. Thêm hướng dẫn DATABASE_URL và SESSION_SECRET.',evaluation:'Cú pháp entry point đã kiểm tra được; cần kết nối database thật và deploy. Chưa chạy bộ test trong lượt này.',adjustment:'Người dùng tạo Supabase project và lưu Transaction pooler URL; tiếp theo nhập URL cùng SESSION_SECRET vào Vercel, rồi deploy từ branch main.',outcome:'success',failurePattern:'',at:new Date().toISOString()}
-  ], sessions: {},
+  ], sessions: {}, reference: createReferenceSeed(hashPassword),
   inventory: [
     { id: 'm_espresso', name: 'Hạt cà phê Espresso', unit: 'kg', current: 8, minimum: 12, supplier: 'Công ty Cà phê Tây Nguyên', price: 185000 },
     { id: 'm_milk', name: 'Sữa tươi thanh trùng', unit: 'lít', current: 22, minimum: 18, supplier: 'Trang trại Sữa Đà Lạt', price: 32000 },
@@ -75,6 +76,8 @@ export function createApplication({ storePath = process.env.STORE_PATH || path.j
         catch (e) { if (e.code !== 'ENOENT') throw e; state = seed(); }
       }
       state.sessions ||= {};
+      state.reference ||= createReferenceSeed(hashPassword);
+      state.reference.sessions ||= {};
       if (!Array.isArray(state.aiDiary)) state.aiDiary = [];
       const existingIds = new Set(state.aiDiary.map(x=>x.id));
       for (const entry of seed().aiDiary) if (!existingIds.has(entry.id)) state.aiDiary.push(entry);
@@ -109,6 +112,20 @@ export function createApplication({ storePath = process.env.STORE_PATH || path.j
     } catch (error) { if (client) { try { await client.query('ROLLBACK'); } catch {} client.release(); } next(error); }
   });
   app.use((req, res, next) => { if (pool && req.path.startsWith('/api/')) return next(); void init().then(() => next(), next); });
+  registerReferenceApi(app, {
+    getState: () => state,
+    persist,
+    hashPassword,
+    checkPassword,
+    sessionSecret,
+    sendMail: async ({to,subject,text}) => {
+      const smtpConfigured = Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+      const transport = emailTransport || (smtpConfigured ? nodemailer.createTransport({ host:process.env.SMTP_HOST, port:Number(process.env.SMTP_PORT||587), secure:String(process.env.SMTP_SECURE)==='true', auth:{user:process.env.SMTP_USER,pass:process.env.SMTP_PASS} }) : null);
+      if (!transport) return false;
+      await transport.sendMail({ from:process.env.ALERT_EMAIL_FROM||process.env.SMTP_USER, to, subject, text });
+      return true;
+    }
+  });
   const audit = (actor, action, details = {}) => state.audit.unshift({ id: `a_${state.nextId++}`, actor: actor?.username || 'system', action, details, at: new Date().toISOString() });
   const cookieHash = token => createHash('sha256').update(`${sessionSecret}:${token}`).digest('hex');
   const auth = (req, res, next) => { const token = parseCookies(req.headers.cookie).alittle_session; const session = token && state.sessions?.[cookieHash(token)]; const user = session && session.expiresAt > Date.now() && state.users.find(u => u.id === session.userId); if (!user) return res.status(401).json({ error: 'Vui lòng đăng nhập.' }); req.user = user; next(); };

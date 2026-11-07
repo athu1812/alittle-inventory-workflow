@@ -14,27 +14,27 @@ npm start
 
 Mở `http://localhost:3001`. Không có `DATABASE_URL`, ứng dụng tạo `data/store.json`. Khi có `DATABASE_URL`, ứng dụng tự tạo bảng `alittle_app_state` trong PostgreSQL và lưu dữ liệu tại đó. Tệp dữ liệu và `.env` nằm trong `.gitignore`.
 
-## Tài khoản demo
+## Vai trò demo
 
-Ba vai trò đăng nhập (mật khẩu demo cho cả ba tài khoản là `Demo123!`):
+- Quản trị viên: `admin` / `Admin@123` — quản lý tài khoản và dữ liệu demo.
+- Chủ quán: `chuquan` / `Chuquan@123` — quản lý danh mục, duyệt/gửi đơn, xử lý NCC và công nợ.
+- Nhân viên: `nhanvien` / `Nhanvien@123` — lập đơn chờ chủ quán duyệt, nhận hàng và xuất kho.
 
-- Nhân viên: `linh` — tạo đơn và ghi nhận hàng.
-- Chủ quán: `trang` — tạo đơn gửi thẳng NCC, duyệt đơn nhân viên và xác nhận thanh toán.
-- Phụ trách kho: `kho` — điều chỉnh tồn kho và ghi nhận hàng.
+Mật khẩu được băm bằng scrypt trước khi lưu. Đổi các tài khoản demo trước khi dùng cho mục đích ngoài lớp học. `SESSION_SECRET` cần là giá trị ngẫu nhiên dài, riêng tư.
 
-Đây là tài khoản demo với mật khẩu dùng chung `Demo123!`; chỉ phù hợp cho bài tập/trình diễn, không dùng dữ liệu kinh doanh thật. `SESSION_SECRET` phải là chuỗi ngẫu nhiên dài, riêng tư.
+## Chức năng
 
-## Các luồng XOR
-
-1. Nhân viên tạo đơn và gửi chủ quán duyệt; chủ quán chọn duyệt, từ chối hoặc trả lại để chỉnh sửa. Đơn do chủ quán tạo đi thẳng sang trạng thái gửi NCC, không qua bước duyệt.
-2. Người nhận hàng chọn đạt, đạt một phần hoặc không đạt; chỉ lượng đạt được cộng vào tồn kho.
-3. Chủ quán chọn thanh toán đủ, thanh toán một phần hoặc ghi nợ.
-
-Nhật ký quy trình chỉ hiển thị hai loại: đơn đã nhập kho và đơn bị trả lại. Mỗi dòng ghi mã đơn, mặt hàng, nhà cung cấp, số lượng nhập/trả và thời gian. Quyền được kiểm tra ở API, không chỉ ẩn nút trên giao diện.
+- Dashboard: tồn dưới định mức, đơn theo trạng thái, đơn trễ, thông báo chưa đọc và công nợ.
+- Danh mục nguyên liệu, nhà cung cấp và bảng giá/lead time theo từng cặp nguyên liệu–NCC.
+- Đơn nhiều dòng: nhân viên gửi chờ duyệt; đơn do chủ quán tạo đi thẳng tới NCC. Có duyệt, từ chối, hủy, gửi lại và đổi NCC khi đủ điều kiện.
+- Kiểm kho tạo đơn nháp tự động theo NCC có giá tốt/lead time ngắn; nhắc giao hàng, email outbox và nhật ký gửi.
+- Nhận hàng nhiều dòng, kiểm tra chất lượng/hạn dùng, ghi lô và biến động kho; xuất kho theo FIFO.
+- Thanh toán đủ, một phần, ghi nợ; quản lý người dùng theo vai trò; thông báo theo vai trò.
+- API kiểm tra vai trò ở server. Mật khẩu và session không lưu dạng rõ.
 
 ## Tích hợp email bên ngoài
 
-Có thể bật SMTP qua `.env` (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `ALERT_EMAIL_TO`). Chủ quán có thể gửi thư thử bằng nút “Kết nối email NCC”. Khi cấu hình SMTP và `ALERT_EMAIL_TO`, đơn do chủ quán tạo sẽ được gửi email ngay tới địa chỉ cấu hình; đơn nhân viên chỉ gửi email sau khi chủ quán duyệt và bấm gửi NCC. Hiện địa chỉ nhận dùng chung, chưa ánh xạ email riêng theo từng nhà cung cấp. Nếu chưa cấu hình SMTP, đơn chủ quán tạo chuyển sang trạng thái cần liên hệ NCC thủ công. Bí mật không lưu trong mã nguồn.
+Có thể bật SMTP qua `.env` (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`). Mỗi nhà cung cấp nhận mail theo email trong hồ sơ. Nếu SMTP chưa cấu hình, email được ghi vào outbox thay vì gửi ra ngoài; lỗi gửi được lưu để chủ quán thử lại. Không lưu bí mật trong mã nguồn.
 
 ## Kiểm thử
 
@@ -42,7 +42,7 @@ Có thể bật SMTP qua `.env` (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PA
 npm test
 ```
 
-Bộ kiểm thử bao phủ đăng nhập ba vai trò, chặn truy cập không xác thực/sai vai trò, ba cổng XOR, ghi tồn kho, công nợ, lưu bền vững và connector email.
+Bộ kiểm thử hiện có là bộ kiểm thử workflow ban đầu; cần mở rộng thêm coverage cho các màn hình mới từ bản demo.
 
 ## Deploy lên Vercel
 
@@ -52,15 +52,15 @@ Repository root là thư mục này. Chọn Framework Preset `Express`; `server.
 - `SESSION_SECRET`: chuỗi ngẫu nhiên dài, riêng tư.
 - SMTP variables tùy chọn như phần tích hợp email.
 
-Vercel function cần PostgreSQL qua transaction pooler; khi request đầu chạy, ứng dụng tự tạo bảng trạng thái và nạp dữ liệu mẫu nếu database còn trống. Đơn hàng, kho, thanh toán, người dùng demo, sessions và nhật ký dùng chung một hàng JSONB, được khóa giao dịch để giữ nhất quán giữa các request. Nếu thiếu biến môi trường, API trả lỗi cấu hình thay vì ghi nhầm vào filesystem tạm.
+Vercel cần PostgreSQL qua transaction pooler; request đầu tự tạo bảng trạng thái, nạp dữ liệu demo khi database trống. Dữ liệu được khóa theo giao dịch PostgreSQL để hạn chế ghi đè giữa các request. Nếu thiếu biến môi trường, API trả lỗi cấu hình thay vì ghi vào filesystem tạm.
 
 ## Phạm vi và hạn chế
 
-Bản cục bộ dùng tệp JSON; bản Vercel yêu cầu Supabase PostgreSQL. Dữ liệu mẫu phản ánh quy trình minh họa, không phải dữ liệu vận hành thực. Chưa tích hợp thanh toán ngân hàng, quản lý người dùng từ giao diện hoặc quên mật khẩu. SMTP là tùy chọn. Không dùng tài khoản/mật khẩu demo hoặc dữ liệu demo để vận hành kinh doanh thật.
+Bản cục bộ dùng tệp JSON; bản Vercel dùng Supabase PostgreSQL. Dữ liệu mẫu phản ánh quy trình minh họa, không phải dữ liệu vận hành thực. Email là outbox nếu chưa cấu hình SMTP; hệ thống chưa tích hợp thanh toán ngân hàng hoặc quy trình quên mật khẩu. Không dùng tài khoản demo hoặc dữ liệu demo để vận hành kinh doanh thật.
 
 ## Nhật ký làm việc với AI
 
-Ứng dụng có mục “Nhật ký AI” để ghi prompt, kết quả, đánh giá, điều chỉnh và phân tích mẫu thất bại. Demo hiện có 11 mục được phân loại: 4 yêu cầu của người dùng, 2 lỗi công cụ có nguyên nhân/cách sửa, và 5 yêu cầu lập trình/chạy ứng dụng trong phiên này. Nhóm nên rà lại nội dung, thay tóm lược bằng prompt nguyên văn nếu giảng viên yêu cầu, và dùng thuật ngữ mẫu thất bại đúng theo tài liệu học phần.
+Phiên bản tham khảo có màn hình thông báo và email outbox. Nhật ký AI của bản báo cáo trước vẫn còn ở API dữ liệu ban đầu; giao diện mới tập trung vào các chức năng vận hành trong file HTML tham khảo.
 
 ## Git
 
