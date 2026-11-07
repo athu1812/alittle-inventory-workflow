@@ -89,7 +89,7 @@ export function migrateReferenceState(ref, hashPassword) {
   return ref;
 }
 
-export function registerReferenceApi(app, { getState, persist, hashPassword, checkPassword, sessionSecret, sendMail }) {
+export function registerReferenceApi(app, { getState, persist, hashPassword, checkPassword, sessionSecret, sendMail, getSmtpSettings, getSmtpConfig, saveSmtpSettings, testSmtpSettings }) {
   const loginAttempts = new Map();
   const db = () => getState().reference;
   const next = type => (db().seq[type] = (db().seq[type] || 0) + 1);
@@ -311,6 +311,30 @@ export function registerReferenceApi(app, { getState, persist, hashPassword, che
     const token = (req.headers.cookie || '').split(';').map(x => x.trim()).find(x => x.startsWith('alittle_ref_session='))?.slice('alittle_ref_session='.length);
     if (token) delete db().sessions[hashToken(decodeURIComponent(token))];
     await persist(); res.setHeader('Set-Cookie', `alittle_ref_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${process.env.NODE_ENV === 'production' || process.env.VERCEL === '1' ? '; Secure' : ''}`); res.json({ ok: true });
+  });
+  route('get', '/integration/smtp', ['admin'], (_req,res) => res.json(getSmtpSettings()));
+  route('put', '/integration/smtp', ['admin'], async (req,res) => {
+    const current = getSmtpConfig(), body = req.body || {};
+    const config = {
+      host:required(body.host,'SMTP host'), port:number(body.port,'SMTP port',{min:1,integer:true}), secure:!!body.secure,
+      username:required(body.username,'SMTP username'), password:required(body.password || current?.password,'SMTP password'),
+      fromEmail:body.fromEmail ? required(body.fromEmail,'Email người gửi') : required(body.username,'SMTP username')
+    };
+    if (config.port > 65535) throw fail(400,'SMTP port phải từ 1 đến 65535');
+    if (!emailPattern.test(config.fromEmail)) throw fail(400,'Email người gửi không hợp lệ');
+    saveSmtpSettings(config); await persist(); res.json({ok:true,settings:getSmtpSettings()});
+  });
+  route('post', '/integration/smtp/test', ['admin'], async (req,res) => {
+    const current = getSmtpConfig(), body = req.body || {};
+    const config = {
+      host:required(body.host || current?.host,'SMTP host'), port:number(body.port || current?.port,'SMTP port',{min:1,integer:true}),
+      secure:body.secure === undefined ? !!current?.secure : !!body.secure, username:required(body.username || current?.username,'SMTP username'),
+      password:required(body.password || current?.password,'SMTP password'), fromEmail:body.fromEmail || current?.fromEmail || body.username
+    };
+    if (config.port > 65535) throw fail(400,'SMTP port phải từ 1 đến 65535');
+    const to = required(body.to,'Email nhận thư kiểm tra');
+    if (!emailPattern.test(to) || !emailPattern.test(config.fromEmail)) throw fail(400,'Email gửi hoặc nhận không hợp lệ');
+    await testSmtpSettings(config,to); res.json({ok:true,message:`Đã gửi email thử nghiệm tới ${to}`});
   });
   route('post', '/demo/reset', ['admin'], async (req,res) => {
     const token = (req.headers.cookie || '').split(';').map(x => x.trim()).find(x => x.startsWith('alittle_ref_session='))?.slice('alittle_ref_session='.length);

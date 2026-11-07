@@ -2,7 +2,7 @@ import express from 'express';
 import nodemailer from 'nodemailer';
 import pg from 'pg';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { randomBytes, scryptSync, timingSafeEqual, createHash } from 'node:crypto';
+import { randomBytes, scryptSync, timingSafeEqual, createHash, createCipheriv, createDecipheriv } from 'node:crypto';
 import { readFile, writeFile, rename, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -32,7 +32,8 @@ const seed = () => ({
     {id:'AI-0010',author:'AI · yêu cầu chạy ứng dụng',prompt:'Khởi động web và xác minh trang chủ, health check và mục nhật ký AI trên localhost.',result:'Ứng dụng trả HTTP 200 ở localhost:3001; /api/health trả ok và API nhật ký có dữ liệu.',evaluation:'Xác minh chạy được trong môi trường này, chưa phải bản deploy công khai. Email SMTP chưa cấu hình.',adjustment:'Ghi lệnh chạy, tài khoản demo và hạn chế deploy/SMTP vào README để nhóm tự chạy và cấu hình.',outcome:'success',failurePattern:'',at:new Date().toISOString()},
     {id:'AI-0011',author:'Nhóm',prompt:'Chủ quán không cần gửi đơn duyệt, chỉ có nhân viên mới cần gửi đơn duyệt, chủ quán tạo đơn là đi thẳng tới NCC luôn. Làm đẹp web và thu gọn nhật ký còn đơn nhập/đơn trả lại, hiện số lượng và mã đơn.',result:'Điều chỉnh backend để đơn nhân viên chờ duyệt, đơn chủ quán chuyển trực tiếp sang trạng thái gửi NCC; thêm ghi nhận phần nhận/nhập/trả và lọc nhật ký theo hai sự kiện. Làm mới giao diện với icon và tông màu cà phê.',evaluation:'Mã frontend và backend đã được cập nhật; chưa chạy lại bộ kiểm thử trong lượt chỉnh sửa này. SMTP chưa cấu hình nên gửi email NCC thật chưa xác minh.',adjustment:'Cập nhật hướng dẫn, kiểm tra mã cú pháp, khởi động lại web và nhờ nhóm cấu hình SMTP/review luồng thực tế.',outcome:'success',failurePattern:'',at:new Date().toISOString()},
     {id:'AI-0012',author:'Nhóm',prompt:'M có thể chỉnh lại web theo dạng như trang hethongcapbangdiem-due.vercel.app không, giữ nghiệp vụ nhưng build deploy công khai?',result:'Tổ chức lại trang đăng nhập thành cổng nghiệp vụ với header, điều hướng, form đăng nhập, thẻ truy cập nhanh cho ba vai trò; giữ nhận diện A Little màu nâu ấm. Xác định Vercel cần repo Git và PostgreSQL bền vững thay cho JSON cục bộ.',evaluation:'Giao diện local đã mở được. URL công khai chưa thể tạo khi repo chưa có source commit và database chưa kết nối.',adjustment:'Chuẩn bị adapter PostgreSQL cho serverless và cấu hình Vercel; xin người dùng tạo Supabase project để thêm bí mật qua dashboard.',outcome:'success',failurePattern:'',at:new Date().toISOString()},
-    {id:'AI-0013',author:'Nhóm',prompt:'Kết nối repository athu1812/alittle-inventory-workflow với Vercel và Supabase để đưa ứng dụng lên địa chỉ công khai.',result:'Khởi tạo repository local, đặt origin GitHub; thêm backend PostgreSQL dùng transaction row lock và session lưu bền vững; export app Express theo preset Vercel. Thêm hướng dẫn DATABASE_URL và SESSION_SECRET.',evaluation:'Cú pháp entry point đã kiểm tra được; cần kết nối database thật và deploy. Chưa chạy bộ test trong lượt này.',adjustment:'Người dùng tạo Supabase project và lưu Transaction pooler URL; tiếp theo nhập URL cùng SESSION_SECRET vào Vercel, rồi deploy từ branch main.',outcome:'success',failurePattern:'',at:new Date().toISOString()}
+    {id:'AI-0013',author:'Nhóm',prompt:'Kết nối repository athu1812/alittle-inventory-workflow với Vercel và Supabase để đưa ứng dụng lên địa chỉ công khai.',result:'Khởi tạo repository local, đặt origin GitHub; thêm backend PostgreSQL dùng transaction row lock và session lưu bền vững; export app Express theo preset Vercel. Thêm hướng dẫn DATABASE_URL và SESSION_SECRET.',evaluation:'Cú pháp entry point đã kiểm tra được; cần kết nối database thật và deploy. Chưa chạy bộ test trong lượt này.',adjustment:'Người dùng tạo Supabase project và lưu Transaction pooler URL; tiếp theo nhập URL cùng SESSION_SECRET vào Vercel, rồi deploy từ branch main.',outcome:'success',failurePattern:'',at:new Date().toISOString()},
+    {id:'AI-0014',author:'Nhóm',prompt:'Lồng cấu hình SMTP vào trong web để cấu hình và gửi email cho nhà cung cấp.',result:'Thêm cấu hình SMTP dành cho Chủ quán ở trang Thông báo & email, endpoint lưu cấu hình mã hóa AES-256-GCM, gửi email thử và dùng SMTP đã lưu để gửi đơn hàng.',evaluation:'Đã kiểm tra cú pháp JavaScript frontend/backend. Chưa gửi email thực tế vì cần thông tin máy chủ, tài khoản SMTP và email nhận thử của nhóm.',adjustment:'Nhập cấu hình SMTP trong web sau khi deploy, gửi email thử để xác nhận kết nối, rồi thử tạo đơn để kiểm tra email NCC.',outcome:'success',failurePattern:'',at:new Date().toISOString()}
   ], sessions: {}, reference: createReferenceSeed(hashPassword),
   inventory: [
     { id: 'm_espresso', name: 'Hạt cà phê Espresso', unit: 'kg', current: 8, minimum: 12, supplier: 'Công ty Cà phê Tây Nguyên', price: 185000 },
@@ -51,6 +52,20 @@ export function createApplication({ storePath = process.env.STORE_PATH || path.j
   let persistQueue = Promise.resolve();
   const databaseUrl = process.env.DATABASE_URL;
   const pool = databaseUrl ? new pg.Pool({ connectionString: databaseUrl, max: 1, ssl: { rejectUnauthorized: false } }) : null;
+  const smtpKey = createHash('sha256').update(`alittle-smtp-config:${sessionSecret}`).digest();
+  const encryptSmtpConfig = config => {
+    const iv = randomBytes(12), cipher = createCipheriv('aes-256-gcm', smtpKey, iv);
+    const encrypted = Buffer.concat([cipher.update(JSON.stringify(config), 'utf8'), cipher.final()]);
+    return { iv:iv.toString('base64'), tag:cipher.getAuthTag().toString('base64'), data:encrypted.toString('base64') };
+  };
+  const decryptSmtpConfig = value => {
+    if (!value?.iv || !value?.tag || !value?.data) return null;
+    const decipher = createDecipheriv('aes-256-gcm', smtpKey, Buffer.from(value.iv,'base64'));
+    decipher.setAuthTag(Buffer.from(value.tag,'base64'));
+    return JSON.parse(Buffer.concat([decipher.update(Buffer.from(value.data,'base64')),decipher.final()]).toString('utf8'));
+  };
+  const envSmtpConfig = () => process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS ? {host:process.env.SMTP_HOST,port:Number(process.env.SMTP_PORT||587),secure:String(process.env.SMTP_SECURE)==='true',username:process.env.SMTP_USER,password:process.env.SMTP_PASS,fromEmail:process.env.ALERT_EMAIL_FROM||process.env.SMTP_USER} : null;
+  const getEffectiveSmtpConfig = () => state?.reference?.smtpConfig ? decryptSmtpConfig(state.reference.smtpConfig) : envSmtpConfig();
   const requestContext = new AsyncLocalStorage();
   app.use((req, res, next) => {
     if (process.env.VERCEL === '1' && req.path.startsWith('/api/') && (!databaseUrl || !process.env.SESSION_SECRET || sessionSecret === 'local-development-secret-change-before-deploy')) {
@@ -118,11 +133,21 @@ export function createApplication({ storePath = process.env.STORE_PATH || path.j
     hashPassword,
     checkPassword,
     sessionSecret,
+    getSmtpSettings: () => {
+      const stored = Boolean(state?.reference?.smtpConfig), config = getEffectiveSmtpConfig();
+      return { configured:Boolean(config), source:stored?'web':'environment', host:config?.host||'', port:config?.port||587, secure:!!config?.secure, username:config?.username||'', fromEmail:config?.fromEmail||'', passwordSaved:!!config?.password };
+    },
+    getSmtpConfig: getEffectiveSmtpConfig,
+    saveSmtpSettings: config => { state.reference.smtpConfig = encryptSmtpConfig(config); },
+    testSmtpSettings: async (config, to) => {
+      const transport = nodemailer.createTransport({host:config.host,port:Number(config.port),secure:!!config.secure,auth:{user:config.username,pass:config.password}});
+      await transport.sendMail({from:config.fromEmail||config.username,to,subject:'A Little Đà Nẵng · Kiểm tra SMTP',text:'Email thử nghiệm kết nối SMTP từ ứng dụng quản lý nhập nguyên liệu.'});
+    },
     sendMail: async ({to,subject,text}) => {
-      const smtpConfigured = Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
-      const transport = emailTransport || (smtpConfigured ? nodemailer.createTransport({ host:process.env.SMTP_HOST, port:Number(process.env.SMTP_PORT||587), secure:String(process.env.SMTP_SECURE)==='true', auth:{user:process.env.SMTP_USER,pass:process.env.SMTP_PASS} }) : null);
+      const config = getEffectiveSmtpConfig();
+      const transport = emailTransport || (config ? nodemailer.createTransport({host:config.host,port:Number(config.port),secure:!!config.secure,auth:{user:config.username,pass:config.password}}) : null);
       if (!transport) return false;
-      await transport.sendMail({ from:process.env.ALERT_EMAIL_FROM||process.env.SMTP_USER, to, subject, text });
+      await transport.sendMail({ from:config?.fromEmail||config?.username||process.env.ALERT_EMAIL_FROM||process.env.SMTP_USER, to, subject, text });
       return true;
     }
   });
