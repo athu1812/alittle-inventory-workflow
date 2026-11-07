@@ -331,21 +331,21 @@ export function registerReferenceApi(app, { getState, persist, hashPassword, che
     res.json(result);
   });
   route('get', '/materials', null, (_req,res) => res.json([...db().materials].filter(x=>x.is_active!==0).sort((a,b) => a.material_name.localeCompare(b.material_name,'vi')).map(x => ({ ...x, supplier_ids:db().ms.filter(link=>link.material_id===x.material_id&&supplier(link.supplier_id)?.is_active!==0).map(link=>link.supplier_id), is_low: +(x.current_quantity <= x.min_quantity) }))));
-  route('post', '/materials', ['employee','admin'], async (req,res) => {
+  route('post', '/materials', ['admin'], async (req,res) => {
     const name = required(req.body?.material_name, 'Tên nguyên liệu');
     if (db().materials.some(x => x.is_active!==0 && x.material_name.toLocaleLowerCase('vi') === name.toLocaleLowerCase('vi'))) throw fail(409, 'Nguyên liệu đã tồn tại');
     const item = { material_id: next('m'), material_name: name, unit: required(req.body?.unit,'Đơn vị'), min_quantity: number(req.body?.min_quantity ?? 0,'Định mức tối thiểu',{min:0}), current_quantity: number(req.body?.current_quantity ?? 0,'Tồn hiện tại',{min:0}), last_updated: new Date().toISOString(), is_active:1 };
     db().materials.push(item); await persist(); res.status(201).json({ material_id: item.material_id });
   });
-  route('put', '/materials/:id', ['employee','admin'], async (req,res) => {
+  route('put', '/materials/:id', ['admin'], async (req,res) => {
     const item = material(req.params.id); if (!item || item.is_active===0) throw fail(404,'Không tìm thấy nguyên liệu đang hoạt động');
     Object.assign(item, { material_name: required(req.body?.material_name ?? item.material_name,'Tên nguyên liệu'), unit: required(req.body?.unit ?? item.unit,'Đơn vị'), min_quantity: number(req.body?.min_quantity ?? item.min_quantity,'Định mức tối thiểu',{min:0}), last_updated: new Date().toISOString() });
     await persist(); res.json({ ok: true });
   });
-  route('delete', '/materials/:id', ['employee','admin'], async (req,res) => { const item=material(req.params.id); if(!item||item.is_active===0)throw fail(404,'Không tìm thấy nguyên liệu đang hoạt động'); item.is_active=0; item.last_updated=new Date().toISOString(); await persist(); res.json({ok:true}); });
+  route('delete', '/materials/:id', ['admin'], async (req,res) => { const item=material(req.params.id); if(!item||item.is_active===0)throw fail(404,'Không tìm thấy nguyên liệu đang hoạt động'); item.is_active=0; item.last_updated=new Date().toISOString(); await persist(); res.json({ok:true}); });
   route('post', '/materials/:id/consume', ['employee','admin'], async (req,res) => { const result = consume(Number(req.params.id),number(req.body?.quantity,'Số lượng',{min:0.0001}),req.refUser.user_id); await persist(); res.json(result); });
   route('get', '/materials/:id/suppliers', null, (req,res) => res.json(db().ms.filter(x => x.material_id === Number(req.params.id)&&supplier(x.supplier_id)?.is_active!==0).map(x => ({ ...x, supplier_name: supplier(x.supplier_id)?.supplier_name || '' })).sort((a,b)=>a.supplier_name.localeCompare(b.supplier_name,'vi'))));
-  route('put', '/material-suppliers', ['employee','admin'], async (req,res) => {
+  route('put', '/material-suppliers', ['admin'], async (req,res) => {
     const material_id = number(req.body?.material_id,'Nguyên liệu',{min:1,integer:true}), supplier_id = number(req.body?.supplier_id,'Nhà cung cấp',{min:1,integer:true});
     if (!material(material_id) || material(material_id).is_active===0 || !supplier(supplier_id) || supplier(supplier_id).is_active===0) throw fail(400,'Nguyên liệu hoặc nhà cung cấp không tồn tại');
     const value = { material_id, supplier_id, unit_price: number(req.body?.unit_price,'Đơn giá',{min:0}), lead_time_hours: number(req.body?.lead_time_hours,'Thời gian giao',{min:0,integer:true}) };
@@ -354,20 +354,20 @@ export function registerReferenceApi(app, { getState, persist, hashPassword, che
     await persist(); res.json({ ok: true });
   });
   route('get', '/suppliers', null, (_req,res) => res.json([...db().suppliers].filter(x=>x.is_active!==0).sort((a,b) => a.supplier_name.localeCompare(b.supplier_name,'vi'))));
-  route('post', '/suppliers', ['employee','admin'], async (req,res) => {
+  route('post', '/suppliers', ['admin'], async (req,res) => {
     const body = req.body || {}, email = body.email ? required(body.email,'Email') : null;
     if (email && !emailPattern.test(email)) throw fail(400,'Email không hợp lệ');
     const item = { supplier_id: next('s'), supplier_name: required(body.supplier_name,'Tên nhà cung cấp'), phone: body.phone || null, email, address: body.address || null, is_active:1 };
     db().suppliers.push(item); await persist(); res.status(201).json({ supplier_id: item.supplier_id });
   });
-  route('put', '/suppliers/:id', ['employee','admin'], async (req,res) => {
+  route('put', '/suppliers/:id', ['admin'], async (req,res) => {
     const item = supplier(req.params.id); if (!item || item.is_active===0) throw fail(404,'Không tìm thấy nhà cung cấp đang hoạt động');
     const body = req.body || {}, email = body.email === undefined ? item.email : (body.email ? required(body.email,'Email') : null);
     if (email && !emailPattern.test(email)) throw fail(400,'Email không hợp lệ');
     Object.assign(item,{supplier_name:required(body.supplier_name ?? item.supplier_name,'Tên nhà cung cấp'),phone:body.phone ?? item.phone,email,address:body.address ?? item.address});
     await persist(); res.json({ ok:true });
   });
-  route('delete', '/suppliers/:id', ['employee','admin'], async (req,res) => { const item=supplier(req.params.id); if(!item||item.is_active===0)throw fail(404,'Không tìm thấy nhà cung cấp đang hoạt động'); item.is_active=0; await persist(); res.json({ok:true}); });
+  route('delete', '/suppliers/:id', ['admin'], async (req,res) => { const item=supplier(req.params.id); if(!item||item.is_active===0)throw fail(404,'Không tìm thấy nhà cung cấp đang hoạt động'); item.is_active=0; await persist(); res.json({ok:true}); });
   route('get', '/batches', null, (_req,res) => res.json(db().rd.filter(x => x.accepted_quantity > 0).map(x => {
     const receipt = db().receipts.find(y => y.receipt_id === x.receipt_id), item = material(x.material_id);
     return { receipt_detail_id:x.receipt_detail_id,batch_no:x.batch_no,material_id:x.material_id,material_name:item?.material_name || '',unit:item?.unit || '',accepted_quantity:x.accepted_quantity,remaining_quantity:x.remaining_quantity,expiry_date:x.expiry_date,received_date:receipt?.received_date,order_id:receipt?.order_id };
