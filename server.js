@@ -2,7 +2,7 @@ import express from 'express';
 import nodemailer from 'nodemailer';
 import pg from 'pg';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { randomBytes, scryptSync, timingSafeEqual, createHash, createCipheriv, createDecipheriv } from 'node:crypto';
+import { randomBytes, scryptSync, timingSafeEqual, createHash } from 'node:crypto';
 import { readFile, writeFile, rename, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -52,20 +52,6 @@ export function createApplication({ storePath = process.env.STORE_PATH || path.j
   let persistQueue = Promise.resolve();
   const databaseUrl = process.env.DATABASE_URL;
   const pool = databaseUrl ? new pg.Pool({ connectionString: databaseUrl, max: 1, ssl: { rejectUnauthorized: false } }) : null;
-  const smtpKey = createHash('sha256').update(`alittle-smtp-config:${sessionSecret}`).digest();
-  const encryptSmtpConfig = config => {
-    const iv = randomBytes(12), cipher = createCipheriv('aes-256-gcm', smtpKey, iv);
-    const encrypted = Buffer.concat([cipher.update(JSON.stringify(config), 'utf8'), cipher.final()]);
-    return { iv:iv.toString('base64'), tag:cipher.getAuthTag().toString('base64'), data:encrypted.toString('base64') };
-  };
-  const decryptSmtpConfig = value => {
-    if (!value?.iv || !value?.tag || !value?.data) return null;
-    const decipher = createDecipheriv('aes-256-gcm', smtpKey, Buffer.from(value.iv,'base64'));
-    decipher.setAuthTag(Buffer.from(value.tag,'base64'));
-    return JSON.parse(Buffer.concat([decipher.update(Buffer.from(value.data,'base64')),decipher.final()]).toString('utf8'));
-  };
-  const envSmtpConfig = () => process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS ? {host:process.env.SMTP_HOST,port:Number(process.env.SMTP_PORT||587),secure:String(process.env.SMTP_SECURE)==='true',username:process.env.SMTP_USER,password:process.env.SMTP_PASS,fromEmail:process.env.ALERT_EMAIL_FROM||process.env.SMTP_USER} : null;
-  const getEffectiveSmtpConfig = () => state?.reference?.smtpConfig ? decryptSmtpConfig(state.reference.smtpConfig) : envSmtpConfig();
   const requestContext = new AsyncLocalStorage();
   app.use((req, res, next) => {
     if (process.env.VERCEL === '1' && req.path.startsWith('/api/') && (!databaseUrl || !process.env.SESSION_SECRET || sessionSecret === 'local-development-secret-change-before-deploy')) {
@@ -92,6 +78,7 @@ export function createApplication({ storePath = process.env.STORE_PATH || path.j
       }
       state.sessions ||= {};
       state.reference = migrateReferenceState(state.reference || createReferenceSeed(hashPassword), hashPassword);
+      delete state.reference.smtpConfig;
       state.reference.sessions ||= {};
       if (!Array.isArray(state.aiDiary)) state.aiDiary = [];
       const existingIds = new Set(state.aiDiary.map(x=>x.id));
@@ -133,23 +120,7 @@ export function createApplication({ storePath = process.env.STORE_PATH || path.j
     hashPassword,
     checkPassword,
     sessionSecret,
-    getSmtpSettings: () => {
-      const stored = Boolean(state?.reference?.smtpConfig), config = getEffectiveSmtpConfig();
-      return { configured:Boolean(config), source:stored?'web':'environment', host:config?.host||'', port:config?.port||587, secure:!!config?.secure, username:config?.username||'', fromEmail:config?.fromEmail||'', passwordSaved:!!config?.password };
-    },
-    getSmtpConfig: getEffectiveSmtpConfig,
-    saveSmtpSettings: config => { state.reference.smtpConfig = encryptSmtpConfig(config); },
-    testSmtpSettings: async (config, to) => {
-      const transport = nodemailer.createTransport({host:config.host,port:Number(config.port),secure:!!config.secure,auth:{user:config.username,pass:config.password}});
-      await transport.sendMail({from:config.fromEmail||config.username,to,subject:'A Little Đà Nẵng · Kiểm tra SMTP',text:'Email thử nghiệm kết nối SMTP từ ứng dụng quản lý nhập nguyên liệu.'});
-    },
-    sendMail: async ({to,subject,text}) => {
-      const config = getEffectiveSmtpConfig();
-      const transport = emailTransport || (config ? nodemailer.createTransport({host:config.host,port:Number(config.port),secure:!!config.secure,auth:{user:config.username,pass:config.password}}) : null);
-      if (!transport) return false;
-      await transport.sendMail({ from:config?.fromEmail||config?.username||process.env.ALERT_EMAIL_FROM||process.env.SMTP_USER, to, subject, text });
-      return true;
-    }
+    sendMail: async () => false
   });
   const audit = (actor, action, details = {}) => state.audit.unshift({ id: `a_${state.nextId++}`, actor: actor?.username || 'system', action, details, at: new Date().toISOString() });
   const cookieHash = token => createHash('sha256').update(`${sessionSecret}:${token}`).digest('hex');
