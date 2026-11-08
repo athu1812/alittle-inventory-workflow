@@ -296,7 +296,7 @@ export function registerReferenceApi(app, { getState, persist, hashPassword, che
     if (order.debt <= 0) throw fail(400, 'Đơn hàng đã thanh toán đủ');
     let amount;
     if (input.mode === 'full') amount = order.debt;
-    else if (input.mode === 'half') amount = Math.min(Math.round(order.total * 0.5), order.debt);
+    else if (input.mode === 'half') amount = Math.min(Math.round(order.debt * 0.5), order.debt);
     else if (input.mode === 'debt') amount = 0;
     else if (input.mode === 'custom') amount = number(input.amount, 'Số tiền', { min: 0.01 });
     else throw fail(400, 'Hình thức thanh toán không hợp lệ');
