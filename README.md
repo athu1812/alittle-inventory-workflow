@@ -68,3 +68,4 @@ Phiên bản tham khảo có màn hình thông báo và email outbox. Nhật ký
 ## Git
 
 Thư mục này được nối với repository `athu1812/alittle-inventory-workflow`. Ghi commit theo các mốc chức năng thực tế; không tạo commit giả để tăng số đếm.
+
