@@ -107,7 +107,10 @@ export function createApplication({ storePath = process.env.STORE_PATH || path.j
         await init();
         // Request khởi tạo vừa đọc database xong: dùng luôn dữ liệu đó, không đọc lại lần nữa.
         if (firstLoad) return requestContext.run({ state }, () => next());
+        const startedAt = performance.now();
         const result = await pool.query('SELECT payload FROM alittle_app_state WHERE id = 1');
+        // Đo thời gian truy vấn database để chẩn đoán độ trễ (xem trong DevTools → Network → Timing).
+        res.setHeader('Server-Timing', `db;dur=${(performance.now() - startedAt).toFixed(1)}`);
         requestContext.run({ state: result.rows[0]?.payload || state }, () => next());
       } catch (error) { next(error); }
       return;
