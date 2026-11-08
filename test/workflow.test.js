@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { createApplication } from '../server.js';
+import { createApplication, pruneState, PRUNE_LIMITS } from '../server.js';
 
 let folder, store, server, base;
 
@@ -207,4 +207,28 @@ test('AI diary stores prompt, outcome, evaluation, and adjustment', async () => 
   assert.equal(diary.entries[0].prompt, payload.prompt);
   assert.equal(diary.entries[0].outcome, 'failed');
   assert.equal((await call(cookie, '/api/ai-diary', 'POST', { prompt: 'x', result: 'y', evaluation: 'z', adjustment: 'q' })).status, 400);
+});
+
+test('pruneState drops expired sessions and caps growing logs without losing unread notifications', () => {
+  const now = 1_000_000;
+  const many = (n, make) => Array.from({ length: n }, (_, i) => make(i));
+  const s = {
+    sessions: { old: { expiresAt: now - 1 }, live: { expiresAt: now + 1 } },
+    audit: many(PRUNE_LIMITS.audit + 50, i => ({ id: i })),
+    reference: {
+      sessions: { old: { expiresAt: now - 1 }, live: { expiresAt: now + 1 } },
+      emails: many(PRUNE_LIMITS.emails + 10, i => ({ id: i })),
+      txns: many(PRUNE_LIMITS.inventoryTransactions + 10, i => ({ transaction_id: i })),
+      notifs: many(PRUNE_LIMITS.notifications + 20, i => ({ id: i, is_read: i === PRUNE_LIMITS.notifications + 5 ? 0 : 1 }))
+    }
+  };
+  pruneState(s, now);
+  assert.deepEqual(Object.keys(s.sessions), ['live']);
+  assert.deepEqual(Object.keys(s.reference.sessions), ['live']);
+  assert.equal(s.audit.length, PRUNE_LIMITS.audit);
+  assert.equal(s.audit[0].id, 0, 'newest entries (front of list) are kept');
+  assert.equal(s.reference.emails.length, PRUNE_LIMITS.emails);
+  assert.equal(s.reference.txns.length, PRUNE_LIMITS.inventoryTransactions);
+  assert.equal(s.reference.notifs.length, PRUNE_LIMITS.notifications + 1);
+  assert.ok(s.reference.notifs.some(n => n.id === PRUNE_LIMITS.notifications + 5), 'old unread notification survives');
 });

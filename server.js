@@ -62,17 +62,23 @@ export function createApplication({ storePath = process.env.STORE_PATH || path.j
   });
   const persist = () => {
     const client = requestContext.getStore()?.client;
-    if (client) return client.query('UPDATE alittle_app_state SET payload = $1::jsonb, updated_at = now() WHERE id = 1', [JSON.stringify(currentState())]);
-    if (pool) return pool.query('INSERT INTO alittle_app_state (id, payload) VALUES (1, $1::jsonb) ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()', [JSON.stringify(currentState())]);
-    persistQueue = persistQueue.then(async () => { await mkdir(path.dirname(storePath), { recursive: true }); const tmp = `${storePath}.${process.pid}.tmp`; await writeFile(tmp, JSON.stringify(state, null, 2), { mode: 0o600 }); await rename(tmp, storePath); }); return persistQueue;
+    if (client) return client.query('UPDATE alittle_app_state SET payload = $1::jsonb, updated_at = now() WHERE id = 1', [JSON.stringify(pruneState(currentState()))]);
+    if (pool) return pool.query('INSERT INTO alittle_app_state (id, payload) VALUES (1, $1::jsonb) ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()', [JSON.stringify(pruneState(currentState()))]);
+    persistQueue = persistQueue.then(async () => { await mkdir(path.dirname(storePath), { recursive: true }); const tmp = `${storePath}.${process.pid}.tmp`; await writeFile(tmp, JSON.stringify(pruneState(state), null, 2), { mode: 0o600 }); await rename(tmp, storePath); }); return persistQueue;
   };
   const init = () => {
     if (initPromise) return initPromise;
     initPromise = (async () => {
       let shouldPersist = false;
       if (pool) {
-        await pool.query('CREATE TABLE IF NOT EXISTS alittle_app_state (id smallint PRIMARY KEY CHECK (id = 1), payload jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now())');
-        const result = await pool.query('SELECT payload FROM alittle_app_state WHERE id = 1');
+        // Đọc trước; chỉ tạo bảng khi chưa tồn tại (42P01) để cold start bớt một lượt truy vấn.
+        let result;
+        try { result = await pool.query('SELECT payload FROM alittle_app_state WHERE id = 1'); }
+        catch (error) {
+          if (error.code !== '42P01') throw error;
+          await pool.query('CREATE TABLE IF NOT EXISTS alittle_app_state (id smallint PRIMARY KEY CHECK (id = 1), payload jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now())');
+          result = { rows: [] };
+        }
         state = result.rows[0]?.payload || seed();
         shouldPersist = !result.rows[0]?.payload;
       } else {
@@ -89,13 +95,18 @@ export function createApplication({ storePath = process.env.STORE_PATH || path.j
       for (const entry of seed().aiDiary) if (!existingIds.has(entry.id)) state.aiDiary.push(entry);
       if (shouldPersist || JSON.stringify(state) !== stateBeforeMigration) await persist();
     })();
+    // Lỗi khởi tạo (vd. database chập chờn lúc cold start) không bị ghi nhớ vĩnh viễn; request sau thử lại.
+    initPromise.catch(() => { initPromise = undefined; });
     return initPromise;
   };
   if (pool) app.use(async (req, res, next) => {
     if (!req.path.startsWith('/api/')) return next();
     if (req.method === 'GET' || req.method === 'HEAD') {
       try {
+        const firstLoad = !initPromise;
         await init();
+        // Request khởi tạo vừa đọc database xong: dùng luôn dữ liệu đó, không đọc lại lần nữa.
+        if (firstLoad) return requestContext.run({ state }, () => next());
         const result = await pool.query('SELECT payload FROM alittle_app_state WHERE id = 1');
         requestContext.run({ state: result.rows[0]?.payload || state }, () => next());
       } catch (error) { next(error); }
@@ -172,6 +183,24 @@ export function createApplication({ storePath = process.env.STORE_PATH || path.j
 const app = createApplication();
 export default app;
 function parseCookies(header=''){return Object.fromEntries(header.split(';').map(c=>c.trim().split('=').map(decodeURIComponent)).filter(p=>p.length===2));}
+// Toàn bộ dữ liệu nằm trong một khối JSON được đọc/ghi ở mọi request, nên phải giữ cho nó gọn:
+// bỏ session hết hạn và giới hạn các danh sách nhật ký chỉ tăng thêm (giao diện chỉ hiển thị phần mới nhất).
+export const PRUNE_LIMITS = { emails: 200, notifications: 300, inventoryTransactions: 1000, audit: 500 };
+export function pruneState(s, now = Date.now()) {
+  if (!s) return s;
+  const dropExpired = sessions => { if (sessions) for (const [key, session] of Object.entries(sessions)) if (!(session?.expiresAt > now)) delete sessions[key]; };
+  dropExpired(s.sessions);
+  if (Array.isArray(s.audit) && s.audit.length > PRUNE_LIMITS.audit) s.audit.length = PRUNE_LIMITS.audit;
+  const ref = s.reference;
+  if (ref) {
+    dropExpired(ref.sessions);
+    if (Array.isArray(ref.emails) && ref.emails.length > PRUNE_LIMITS.emails) ref.emails.length = PRUNE_LIMITS.emails;
+    if (Array.isArray(ref.txns) && ref.txns.length > PRUNE_LIMITS.inventoryTransactions) ref.txns.length = PRUNE_LIMITS.inventoryTransactions;
+    // Thông báo: giữ phần mới nhất, nhưng không bao giờ xoá thông báo chưa đọc.
+    if (Array.isArray(ref.notifs) && ref.notifs.length > PRUNE_LIMITS.notifications) ref.notifs = ref.notifs.filter((n, i) => i < PRUNE_LIMITS.notifications || !n.is_read);
+  }
+  return s;
+}
 function publicUser(u){return{id:u.id,username:u.username,name:u.name,role:u.role,roleLabel:ROLES[u.role]};}
 function smtpReady(){return Boolean(process.env.SMTP_HOST&&process.env.SMTP_USER&&process.env.SMTP_PASS&&process.env.ALERT_EMAIL_TO);}
 function makeSmtpTransport(){return smtpReady()?nodemailer.createTransport({host:process.env.SMTP_HOST,port:Number(process.env.SMTP_PORT||587),secure:String(process.env.SMTP_SECURE)==='true',auth:{user:process.env.SMTP_USER,pass:process.env.SMTP_PASS}}):null;}
