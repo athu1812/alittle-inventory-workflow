@@ -45,7 +45,18 @@ Có thể bật SMTP qua `.env` (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PA
 npm test
 ```
 
-Bộ kiểm thử hiện có là bộ kiểm thử workflow ban đầu; cần mở rộng thêm coverage cho các màn hình mới từ bản demo.
+Bộ kiểm thử tích hợp hiện gọi trực tiếp các API đang dùng trong `server.js` và kiểm tra 8 luồng:
+
+1. Đăng nhập ba vai trò và giới hạn quyền nhân viên kho.
+2. Nhân viên tạo đơn chờ duyệt; chủ quán tạo đơn gửi thẳng và kiểm tra email outbox.
+3. Từ chối API khi chưa đăng nhập và thu hồi phiên sau khi đăng xuất.
+4. Chỉ chủ quán được duyệt và một đơn không thể bị quyết định lần hai.
+5. Nhận hàng đạt/không đạt, cập nhật tồn kho và chặn nhận trùng đơn đã hoàn tất.
+6. Thanh toán nhiều lần, ghi nợ và tất toán công nợ.
+7. Lưu dữ liệu, băm mật khẩu và xác nhận cấu hình SMTP không bị ghi vào store.
+8. Tạo/đọc nhật ký AI và từ chối payload không hợp lệ.
+
+Kết quả chạy gần nhất: **8 kịch bản đạt, 0 lỗi** (`npm test`, Node.js test runner). Đây là kiểm thử API tích hợp trên môi trường cục bộ với store tạm; không phải kiểm thử trình duyệt end-to-end hay kiểm thử tải production.
 
 ## Deploy lên Vercel
 
@@ -64,6 +75,8 @@ Bản cục bộ dùng tệp JSON; bản Vercel dùng Supabase PostgreSQL. Dữ 
 ## Nhật ký làm việc với AI
 
 Phiên bản tham khảo có màn hình thông báo và email outbox. Nhật ký AI của bản báo cáo trước vẫn còn ở API dữ liệu ban đầu; giao diện mới tập trung vào các chức năng vận hành trong file HTML tham khảo.
+
+
 
 ## Git
 
